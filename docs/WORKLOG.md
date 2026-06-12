@@ -8,6 +8,21 @@
 
 ---
 
+## 2026-06-12 午前 — 全体再検分グリーン → GitHub Pages へ初公開
+
+- **体制**: 検査官役=オーケストレータ(直列バッチA4〜E4)→ユーザー指示で公開作業もオーケストレータが実施→記録係。
+- **25作品体制の全体再検分**(バッチA4〜E4、計24スクリプト、結果 `_check/final-audit.log`):
+  - A4: smoke-all(24・25含む全24本 OK)/ mobile-sweep / meta-audit(26ページ 0 failed)。B4: gesture-all(25番まで NO_ERRORS)。C4: niwa系5本(touch 30/30)。D4: 音・季節系4本。E4: 個別回帰5本+**新作テスト6本**(echo-cave/furiko/toudai/sukima/shabon/michishio)。
+  - **全24スクリプト exit=0・console/pageerror 全て0。検出ゼロ。**
+- **GitHub Pages へ初公開**(ユーザー指示「https://github.com/uzuchan/hikari.github.io プッシュして」):
+  - git init(main)。`.gitignore` で node_modules と _check のスクリーンショット証跡(計約53M)を除外し、検査スクリプト・監査ログ・docs はすべて含めて **100ファイル/約1.2M** の初コミット。`README.md` 新設(遊びかた・構成・検証手順)。`.claude/scheduled_tasks.lock` の混入を検知し除外。
+  - `uzuchan/hikari.github.io`(公開・空リポジトリ)へ push、**GitHub Pages を main から有効化**。
+  - **og:image を絶対URL化**(全26ページ、`https://uzuchan.github.io/hikari.github.io/assets/og.png`)— WORKLOG に記録していたデプロイ後タスクの消化。meta-audit を「絶対URLは正準一致+ローカル実体200」の判定に対応させ 26ページ 0 failed。2コミット目を push。
+  - **ライブ検証**: 公開URL4本(ギャラリー/19-niwa/og.png/25)すべて HTTP 200。実ブラウザでライブサイトを開き、カード25枚・作品への遷移・console error 0 を確認(`_check/live-gallery.png` 目視 — 星空にギャラリーが灯っている)。
+  - **公開URL: https://uzuchan.github.io/hikari.github.io/**
+- **未解決の問題**: なし(メモ: 以後のイテレーションは「変更→検証→コミット→push」を基本サイクルに含める)。
+- **次にやること**: ループ継続。次候補: 公開済みサイトとしての磨き(タイトル文言「10の試作」→実数に追従、フッター等)/ 新作26番 / 光の庭の次の拡張。
+
 ## 2026-06-12 午前 — 新作25番「月のみちしお」
 
 - **体制**: /new-demo の正規手順でオーケストレータが機能ビルダー役を直接実施(検証スクリプト新設・一発 ALL PASS)→記録係。
