@@ -72,7 +72,7 @@ for (const { url, og } of PAGES) {
 
   // 相対パスをページ URL に対して解決し、実際に 200 で取れることを確認
   // og:image はデプロイ後に絶対URL(GitHub Pages)へ切替済み — 正準URLと一致し、実体 /assets/og.png がローカルにあることを確認
-  const OG_ABS = 'https://uzuchan.github.io/hikari.github.io/assets/og.png';
+  const OG_ABS = 'https://uzuchan.github.io/hikari/assets/og.png';
   for (const [label, href] of [['favicon', meta.favicon], ['og:image', meta.ogImage]]) {
     if (!href) continue;
     if (/^https?:/.test(href)) {
