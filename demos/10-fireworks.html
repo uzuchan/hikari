@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>10 影に咲く花火</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="スワイプで光の種を打ち上げると花火が咲き、残光が地に落ちて花畑として積もっていく。">
+<meta property="og:title" content="10 影に咲く花火 — hikari">
+<meta property="og:description" content="スワイプで光の種を打ち上げると花火が咲き、残光が地に落ちて花畑として積もっていく。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+</head>
+<body data-screen-label="10 影に咲く花火">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 10</div>
+    <div class="hud-title">影に咲く花火</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">下から上へスワイプすると、光の種が打ち上がって花火が咲きます。<br>残光が地面に落ちて、花畑として積もっていきます。速くスワイプするほど高く昇ります。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas + スワイプ</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">Swift (加速度) + WebSocket + 投影</span></div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+let W, H, DPR = Math.min(devicePixelRatio, 2);
+
+// 地面の花畑（蓄積レイヤー）
+const field = document.createElement('canvas');
+const fx = field.getContext('2d');
+
+function resize() {
+  W = cv.width = innerWidth*DPR;
+  H = cv.height = innerHeight*DPR;
+  field.width = W; field.height = H;
+}
+resize();
+addEventListener('resize', resize);
+
+const PALETTE = ['#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
+const groundY = () => H - (innerWidth <= 640 ? 215 : 130)*DPR;  // スマホ縦は hud-bottom(縦積み)が高いぶん花畑を上げる
+
+let rockets = [], sparks = [], embers = [];
+
+// ---- スワイプ ----
+let swipe = null;
+addEventListener('pointerdown', e => swipe = { x: e.clientX, y: e.clientY, t: performance.now() });
+addEventListener('pointerup', e => {
+  if (!swipe) return;
+  const dy = swipe.y - e.clientY;
+  const dt = (performance.now() - swipe.t) / 1000;
+  if (dy > 40 && dt < 0.8) {
+    const power = Math.min(1, dy / dt / 2600);
+    launch(e.clientX*DPR, 0.35 + power*0.65);
+  }
+  swipe = null;
+});
+
+function launch(x, power) {
+  rockets.push({
+    x, y: groundY(),
+    vy: -(11 + power*8)*DPR,
+    vx: (Math.random()-0.5)*1.2*DPR,
+    c: PALETTE[Math.floor(Math.random()*PALETTE.length)],
+    targetY: H * (0.5 - power*0.32),
+    trail: []
+  });
+}
+
+// ---- 花火＝花の形（バラ曲線）----
+function bloom(x, y, c) {
+  const petals = 5 + Math.floor(Math.random()*3);
+  const R = (70 + Math.random()*70)*DPR;
+  for (let i=0; i<160; i++) {
+    const th = Math.random()*Math.PI*2;
+    const rr = Math.abs(Math.sin(th * petals / 2)) * R * (0.55 + Math.random()*0.45);
+    const sp = rr / R;
+    sparks.push({
+      x, y,
+      vx: Math.cos(th) * sp * (3.2+Math.random())*DPR,
+      vy: Math.sin(th) * sp * (3.2+Math.random())*DPR,
+      c: Math.random() < 0.82 ? c : '#fffbe8',
+      life: 1, decay: 0.006 + Math.random()*0.008,
+      ember: Math.random() < 0.22
+    });
+  }
+  // 中心の閃光
+  sparks.push({ x, y, vx:0, vy:0, c:'#ffffff', life:1, decay:0.05, flash: (40+Math.random()*20)*DPR });
+}
+
+// ---- 地面に花を植える ----
+function plant(x, c) {
+  const y = groundY() + (Math.random()*26)*DPR;
+  const s = (5 + Math.random()*9)*DPR;
+  fx.save();
+  fx.translate(x, y);
+  fx.shadowColor = c;
+  fx.shadowBlur = 8*DPR;
+  fx.fillStyle = c;
+  fx.globalAlpha = 0.85;
+  const np = 5;
+  for (let i=0; i<np; i++) {
+    fx.rotate(Math.PI*2/np);
+    fx.beginPath();
+    fx.ellipse(0, -s*0.55, s*0.26, s*0.55, 0, 0, Math.PI*2);
+    fx.fill();
+  }
+  fx.fillStyle = '#fffbe8';
+  fx.beginPath(); fx.arc(0, 0, s*0.2, 0, 7); fx.fill();
+  fx.restore();
+}
+
+// ---- ループ ----
+function loop(t) {
+  cx.fillStyle = 'rgba(7,7,13,0.22)';
+  cx.fillRect(0,0,W,H);
+
+  // 地平線
+  cx.strokeStyle = 'rgba(140,232,255,0.14)';
+  cx.lineWidth = 1*DPR;
+  cx.beginPath();
+  cx.moveTo(0, groundY()+10*DPR);
+  cx.lineTo(W, groundY()+10*DPR);
+  cx.stroke();
+
+  // 花畑（蓄積）— ほのかに明滅
+  cx.globalAlpha = 0.82 + 0.18*Math.sin(t*0.0012);
+  cx.drawImage(field, 0, 0);
+  cx.globalAlpha = 1;
+
+  // ロケット
+  for (let i=rockets.length-1; i>=0; i--) {
+    const r = rockets[i];
+    r.x += r.vx; r.y += r.vy;
+    r.vy += 0.12*DPR;
+    r.trail.unshift({x:r.x, y:r.y});
+    if (r.trail.length > 14) r.trail.pop();
+    for (let k=1; k<r.trail.length; k++) {
+      cx.strokeStyle = r.c;
+      cx.globalAlpha = (1-k/r.trail.length)*0.7;
+      cx.lineWidth = (1-k/r.trail.length)*3*DPR;
+      cx.beginPath();
+      cx.moveTo(r.trail[k-1].x, r.trail[k-1].y);
+      cx.lineTo(r.trail[k].x, r.trail[k].y);
+      cx.stroke();
+    }
+    cx.globalAlpha = 1;
+    cx.fillStyle = '#fffbe8';
+    cx.shadowColor = r.c; cx.shadowBlur = 12*DPR;
+    cx.beginPath(); cx.arc(r.x, r.y, 3*DPR, 0, 7); cx.fill();
+    cx.shadowBlur = 0;
+    if (r.y <= r.targetY || r.vy > 0) {
+      bloom(r.x, r.y, r.c);
+      rockets.splice(i, 1);
+    }
+  }
+
+  // 火花
+  sparks = sparks.filter(s => s.life > 0);
+  for (const s of sparks) {
+    if (s.flash) { // 閃光
+      cx.globalAlpha = s.life*0.55;
+      const gr = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.flash);
+      gr.addColorStop(0, '#ffffff');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      cx.fillStyle = gr;
+      cx.beginPath(); cx.arc(s.x, s.y, s.flash, 0, 7); cx.fill();
+      cx.globalAlpha = 1;
+      s.life -= s.decay;
+      continue;
+    }
+    s.x += s.vx; s.y += s.vy;
+    s.vx *= 0.975; s.vy *= 0.975;
+    s.vy += 0.035*DPR;
+    s.life -= s.decay;
+    cx.globalAlpha = s.life;
+    cx.fillStyle = s.c;
+    cx.shadowColor = s.c;
+    cx.shadowBlur = 8*DPR;
+    cx.beginPath(); cx.arc(s.x, s.y, 1.9*DPR, 0, 7); cx.fill();
+    cx.shadowBlur = 0;
+    // 残光→落下する灯
+    if (s.ember && s.life < 0.45) {
+      s.ember = false;
+      embers.push({ x: s.x, y: s.y, vy: (0.8+Math.random()*1.2)*DPR, c: s.c, sway: Math.random()*7 });
+    }
+  }
+  cx.globalAlpha = 1;
+
+  // 灯が地面へ落ちて花になる
+  for (let i=embers.length-1; i>=0; i--) {
+    const e = embers[i];
+    e.y += e.vy;
+    e.x += Math.sin(t*0.003 + e.sway)*0.6*DPR;
+    cx.fillStyle = e.c;
+    cx.shadowColor = e.c;
+    cx.shadowBlur = 10*DPR;
+    cx.globalAlpha = 0.85;
+    cx.beginPath(); cx.arc(e.x, e.y, 2.2*DPR, 0, 7); cx.fill();
+    cx.shadowBlur = 0;
+    cx.globalAlpha = 1;
+    if (e.y >= groundY()) {
+      plant(e.x, e.c);
+      embers.splice(i, 1);
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// 最初に一発お手本
+setTimeout(() => launch(W*0.5, 0.75), 700);
+</script>
+</body>
+</html>

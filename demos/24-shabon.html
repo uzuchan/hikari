@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>24 夜のしゃぼん</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="息を吹きこむと、光のしゃぼん玉がふくらんで夜へ漂う。ふれると、ほどけて星屑になる。">
+<meta property="og:title" content="24 夜のしゃぼん — hikari">
+<meta property="og:description" content="息を吹きこむと、光のしゃぼん玉がふくらんで夜へ漂う。ふれると、ほどけて星屑になる。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+<style>
+  #micbar {
+    position: fixed;
+    top: 26px;
+    right: 26px;
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  #level {
+    width: 90px; height: 4px;
+    border-radius: 99px;
+    background: rgba(244,242,236,0.12);
+    overflow: hidden;
+    display: none;
+  }
+  #level i {
+    display: block; height: 100%;
+    width: 0%;
+    background: var(--glow-cyan);
+    box-shadow: 0 0 10px var(--glow-cyan);
+    transition: width 0.08s;
+  }
+</style>
+</head>
+<body data-screen-label="24 夜のしゃぼん">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div id="micbar">
+  <div id="level"><i></i></div>
+  <button class="action-btn" id="mic">🫧 息を吹きこむ</button>
+</div>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 24</div>
+    <div class="hud-title">夜のしゃぼん</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">マイクに息を吹くと、しゃぼん玉がふくらんで夜へ漂います。ふれると、ほどけて星屑に。<br>マイクがなければ、画面を押さえている間も息になります。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas + Web Audio</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">TouchDesigner + マイク</span></div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+let W, H, DPR = Math.min(devicePixelRatio, 2);
+
+const PALETTE = ['#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
+
+// ---- しゃぼんの縁(リング)スプライト — 虹色は色相回転で表す ----
+const rimSprites = PALETTE.map(c => {
+  const s = document.createElement('canvas');
+  s.width = s.height = 128;
+  const g = s.getContext('2d');
+  const gr = g.createRadialGradient(64, 64, 40, 64, 64, 62);
+  gr.addColorStop(0, c + '00');
+  gr.addColorStop(0.75, c + '22');
+  gr.addColorStop(0.95, c);
+  gr.addColorStop(1, c + '00');
+  g.fillStyle = gr;
+  g.beginPath(); g.arc(64, 64, 64, 0, 7); g.fill();
+  // ハイライト(左上の小さな月)
+  const hl = g.createRadialGradient(42, 40, 0, 42, 40, 16);
+  hl.addColorStop(0, '#fffbe8cc');
+  hl.addColorStop(1, '#fffbe800');
+  g.fillStyle = hl;
+  g.beginPath(); g.arc(42, 40, 16, 0, 7); g.fill();
+  return s;
+});
+const dustSprite = (() => {
+  const s = document.createElement('canvas');
+  s.width = s.height = 32;
+  const g = s.getContext('2d');
+  const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, '#fffbe8');
+  gr.addColorStop(0.4, '#c9a8ff88');
+  gr.addColorStop(1, '#c9a8ff00');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 32, 32);
+  return s;
+})();
+
+let stars = [];
+function resize() {
+  W = cv.width = innerWidth * DPR;
+  H = cv.height = innerHeight * DPR;
+  stars = Array.from({ length: 80 }, () => ({
+    x: Math.random() * W, y: Math.random() * H * 0.85,
+    r: (0.5 + Math.random() * 1.2) * DPR,
+    ph: Math.random() * 7,
+  }));
+}
+resize();
+addEventListener('resize', resize);
+
+// ---- しゃぼん玉たち ----
+let bubbles = [];   // {x,y,r,vx,vy,ci,wob,ph,life}
+let dust = [];      // ほどけた星屑
+let growing = null; // ふくらみ中 {x,y,r,ci}
+
+// 吹き口(しゃぼんが生まれる場所): 画面下中央のやや上
+const wand = () => ({ x: W * 0.5, y: H * 0.72 });
+
+function detach() {
+  if (!growing || growing.r < 9 * DPR) { growing = null; return; }
+  bubbles.push({
+    x: growing.x, y: growing.y, r: growing.r,
+    vx: (Math.random() - 0.5) * 0.5 * DPR,
+    vy: -(0.25 + Math.random() * 0.4) * DPR * (1 + 14 / (growing.r / DPR)),
+    ci: growing.ci,
+    wob: 0.06 + Math.random() * 0.08,
+    ph: Math.random() * 7,
+    life: 1,
+  });
+  cv.dataset.bubbles = bubbles.length;   // 検証用の覗き窓
+  growing = null;
+}
+
+function pop(b, idx) {
+  const n = Math.round(8 + b.r / DPR * 0.5);
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = (0.6 + Math.random() * 1.6) * DPR;
+    dust.push({
+      x: b.x + Math.cos(a) * b.r * 0.8,
+      y: b.y + Math.sin(a) * b.r * 0.8,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp - 0.3 * DPR,
+      life: 1,
+      s: (4 + Math.random() * 7) * DPR,
+    });
+  }
+  ping(520 + Math.random() * 500, 0.05);
+  bubbles.splice(idx, 1);
+  cv.dataset.bubbles = bubbles.length;
+}
+
+// ---- 音(ほどけた時のささやかな粒) ----
+let ac = null, master = null;
+function ensureAudio() {
+  if (ac) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    ac = new AC();
+    if (ac.state === 'suspended') ac.resume().catch(() => {});
+    master = ac.createGain(); master.gain.value = 0.2;
+    master.connect(ac.destination);
+  } catch (e) { ac = null; }
+}
+function ping(freq, vol) {
+  if (!ac || !master) return;
+  try {
+    const t0 = ac.currentTime;
+    const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = freq;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(vol, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.6);
+    o.connect(g); g.connect(master);
+    o.start(t0); o.stop(t0 + 0.7);
+    o.onended = () => { try { o.disconnect(); g.disconnect(); } catch (_) {} };
+  } catch (e) { /* 音は飾り */ }
+}
+
+// ---- 息の入力: マイク or 長押し ----
+let analyser = null, micData = null, micActive = false;
+let breath = 0;     // 0..1 いまの息の強さ(平滑)
+let holding = false;
+
+const levelBar = document.querySelector('#level i');
+const micBtn = document.getElementById('mic');
+micBtn.addEventListener('click', async () => {
+  if (micActive) return;
+  ensureAudio();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (!ac) throw new Error('no AudioContext');
+    const src = ac.createMediaStreamSource(stream);
+    analyser = ac.createAnalyser();
+    analyser.fftSize = 512;
+    micData = new Uint8Array(analyser.frequencyBinCount);
+    src.connect(analyser);            // destination へは繋がない
+    micActive = true;
+    micBtn.textContent = '🫧 息をきいている …';
+    document.getElementById('level').style.display = 'block';
+  } catch (e) {
+    micBtn.textContent = 'マイクは使えないみたい';
+    setTimeout(() => { micBtn.textContent = '🫧 息を吹きこむ'; }, 2400);
+  }
+});
+
+function readBreath() {
+  let target = holding ? 0.55 : 0;
+  if (micActive && analyser) {
+    analyser.getByteFrequencyData(micData);
+    let sum = 0;
+    for (let i = 1; i < 24; i++) sum += micData[i];   // 低域=息
+    const lvl = Math.min(1, (sum / 24 / 255) * 1.9);
+    if (levelBar) levelBar.style.width = (lvl * 100).toFixed(0) + '%';
+    target = Math.max(target, lvl > 0.1 ? lvl : 0);
+  }
+  breath += (target - breath) * (target > breath ? 0.2 : 0.07);
+}
+
+// タップ: しゃぼんに触れたらほどく / 何もなければ押さえている間ふくらむ
+addEventListener('pointerdown', e => {
+  if (e.target.closest && e.target.closest('#micbar, .hud-top, .hud-bottom')) return;
+  ensureAudio();
+  const px = e.clientX * DPR, py = e.clientY * DPR;
+  for (let i = bubbles.length - 1; i >= 0; i--) {
+    const b = bubbles[i];
+    if (Math.hypot(px - b.x, py - b.y) < b.r + 14 * DPR) { pop(b, i); return; }
+  }
+  holding = true;
+});
+addEventListener('pointerup', () => holding = false);
+addEventListener('pointercancel', () => holding = false);
+
+// ---- ループ ----
+let last = performance.now();
+function loop(now) {
+  const t = now;
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  cx.fillStyle = 'rgba(8,8,14,0.3)';
+  cx.fillRect(0, 0, W, H);
+
+  readBreath();
+
+  // 星
+  for (const s of stars) {
+    cx.globalAlpha = 0.25 + 0.3 * Math.sin(t * 0.0013 + s.ph);
+    cx.fillStyle = '#f4f2ec';
+    cx.beginPath(); cx.arc(s.x, s.y, s.r, 0, 7); cx.fill();
+  }
+  cx.globalAlpha = 1;
+
+  // 吹き口の小さな灯
+  const wd = wand();
+  cx.globalAlpha = 0.5 + 0.25 * Math.sin(t * 0.004);
+  cx.drawImage(dustSprite, wd.x - 8 * DPR, wd.y - 8 * DPR, 16 * DPR, 16 * DPR);
+  cx.globalAlpha = 1;
+
+  // 息 → ふくらむ
+  if (breath > 0.08) {
+    if (!growing) growing = { x: wd.x, y: wd.y - 10 * DPR, r: 4 * DPR, ci: Math.floor(Math.random() * PALETTE.length) };
+    growing.r += breath * 38 * DPR * dt;
+    growing.x = wd.x + Math.sin(t * 0.005) * 4 * DPR;
+    if (growing.r > 64 * DPR) detach();     // 大きくなりすぎたら旅立つ
+  } else if (growing) {
+    detach();                                // 息が止んだら旅立つ
+  }
+
+  // ふくらみ中のしゃぼん
+  if (growing) {
+    const g = growing;
+    cx.globalAlpha = 0.95;
+    cx.drawImage(rimSprites[g.ci], g.x - g.r, g.y - g.r, g.r * 2, g.r * 2);
+    cx.globalAlpha = 1;
+  }
+
+  // 漂うしゃぼん
+  for (let i = bubbles.length - 1; i >= 0; i--) {
+    const b = bubbles[i];
+    b.ph += b.wob * dt * 6;
+    b.x += b.vx + Math.sin(b.ph) * 0.4 * DPR;
+    b.y += b.vy;
+    b.vy *= 0.999;
+    // 画面の外(上)へ抜けたら静かに消える
+    if (b.y < -b.r * 2) { bubbles.splice(i, 1); cv.dataset.bubbles = bubbles.length; continue; }
+    if (b.x < -b.r) b.x = W + b.r;
+    if (b.x > W + b.r) b.x = -b.r;
+    // ゆらぎ(楕円につぶす)
+    const sq = 1 + Math.sin(b.ph * 1.7) * 0.06;
+    cx.save();
+    cx.translate(b.x, b.y);
+    cx.scale(sq, 2 - sq);
+    // 色相をゆっくり巡らせる(2枚のリングをクロスフェード)
+    const hueT = (t * 0.0002 + b.ph * 0.13) % PALETTE.length;
+    const i1 = Math.floor(hueT) % PALETTE.length;
+    const i2 = (i1 + 1) % PALETTE.length;
+    const f = hueT - Math.floor(hueT);
+    cx.globalAlpha = 0.9 * (1 - f);
+    cx.drawImage(rimSprites[i1], -b.r, -b.r, b.r * 2, b.r * 2);
+    cx.globalAlpha = 0.9 * f;
+    cx.drawImage(rimSprites[i2], -b.r, -b.r, b.r * 2, b.r * 2);
+    cx.restore();
+    cx.globalAlpha = 1;
+  }
+
+  // 星屑
+  cx.globalCompositeOperation = 'lighter';
+  dust = dust.filter(d => d.life > 0);
+  for (const d of dust) {
+    d.x += d.vx; d.y += d.vy;
+    d.vy += 0.015 * DPR;
+    d.life -= 0.016;
+    cx.globalAlpha = Math.max(0, d.life) * 0.85;
+    cx.drawImage(dustSprite, d.x - d.s / 2, d.y - d.s / 2, d.s, d.s);
+  }
+  cx.globalAlpha = 1;
+  cx.globalCompositeOperation = 'source-over';
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// お手本: 起動してすこし経ったら、ひとつだけ自然に生まれる
+setTimeout(() => {
+  growing = { x: wand().x, y: wand().y - 10 * DPR, r: 26 * DPR, ci: 3 };
+  setTimeout(() => detach(), 600);
+}, 1100);
+</script>
+</body>
+</html>

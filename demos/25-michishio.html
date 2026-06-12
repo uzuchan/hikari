@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>25 月のみちしお</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="ふたつの端末は、それぞれ小さな海。月を渡すと、月の下の海が満ちて、とおい海は引いていく。">
+<meta property="og:title" content="25 月のみちしお — hikari">
+<meta property="og:description" content="ふたつの端末は、それぞれ小さな海。月を渡すと、月の下の海が満ちて、とおい海は引いていく。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+<style>
+  .dev-label {
+    position: fixed;
+    top: 21.5vh;
+    transform: translateX(-50%);
+    font-family: var(--serif);
+    font-size: 12px;
+    letter-spacing: 0.34em;
+    color: var(--dimmer);
+    pointer-events: none;
+    z-index: 5;
+    text-shadow: 0 0 16px rgba(244, 242, 236, 0.18);
+    white-space: nowrap;
+    text-align: center;
+  }
+  .dev-label small {
+    display: block;
+    margin-top: 6px;
+    font-family: var(--sans);
+    font-size: 9px;
+    letter-spacing: 0.26em;
+    color: rgba(244, 242, 236, 0.18);
+  }
+  .dev-a { left: 25%; }
+  .dev-b { left: 75%; }
+  @media (max-width: 640px) {
+    .dev-label { font-size: 10px; letter-spacing: 0.22em; }
+  }
+</style>
+</head>
+<body data-screen-label="25 月のみちしお">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="dev-label dev-a">ちかくの海<small>DEVICE A</small></div>
+<div class="dev-label dev-b">とおくの海<small>DEVICE B</small></div>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 25</div>
+    <div class="hud-title">月のみちしお</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">月をつかんで、もうひとつの海へ渡してみてください。<br>月の下の海は満ちて、とおい海はしずかに引いていきます。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas 2D（1画面で擬似再現）</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">Swift (加速度) + WebSocket + 投影</span></div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+let W, H, DPR = Math.min(devicePixelRatio, 2);
+
+const PALETTE = ['#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
+
+// ---- 月(プリレンダ) ----
+const moonSprite = (() => {
+  const s = document.createElement('canvas');
+  s.width = s.height = 256;
+  const g = s.getContext('2d');
+  const halo = g.createRadialGradient(128, 128, 30, 128, 128, 128);
+  halo.addColorStop(0, 'rgba(255,217,138,0.5)');
+  halo.addColorStop(0.5, 'rgba(255,217,138,0.12)');
+  halo.addColorStop(1, 'rgba(255,217,138,0)');
+  g.fillStyle = halo;
+  g.fillRect(0, 0, 256, 256);
+  const disc = g.createRadialGradient(116, 116, 4, 128, 128, 42);
+  disc.addColorStop(0, '#fff8e2');
+  disc.addColorStop(0.8, '#ffd98a');
+  disc.addColorStop(1, '#e8b96a');
+  g.fillStyle = disc;
+  g.beginPath(); g.arc(128, 128, 42, 0, 7); g.fill();
+  return s;
+})();
+const sparkSprite = (() => {
+  const s = document.createElement('canvas');
+  s.width = s.height = 32;
+  const g = s.getContext('2d');
+  const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, '#f4f2ec');
+  gr.addColorStop(0.4, '#8ce8ff66');
+  gr.addColorStop(1, '#8ce8ff00');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 32, 32);
+  return s;
+})();
+
+let stars = [], frames = [], sparkles = [];
+const moon = { x: 0, y: 0, vx: 0, vy: 0, held: false, r: 30 };
+
+function resize() {
+  W = cv.width = innerWidth * DPR;
+  H = cv.height = innerHeight * DPR;
+  const m = 12 * DPR;
+  const top = H * 0.18, bot = H * 0.84;
+  frames = [0, 1].map(i => {
+    const x = (W / 2) * i + m, w = W / 2 - m * 2;
+    return { x, y: top, w, h: bot - top, cx: x + w / 2, tide: 0.32, target: 0.32 };
+  });
+  if (!moon.x) { moon.x = frames[0].cx; moon.y = H * 0.32; }
+  moon.r = Math.min(30 * DPR, frames[0].w * 0.12);
+  stars = Array.from({ length: 110 }, () => ({
+    x: Math.random() * W, y: Math.random() * H * 0.8,
+    r: (0.5 + Math.random() * 1.2) * DPR,
+    ph: Math.random() * 7,
+  }));
+  sparkles = Array.from({ length: 50 }, () => ({
+    f: Math.floor(Math.random() * 2),
+    u: Math.random(),
+    ph: Math.random() * 7,
+    s: (3 + Math.random() * 6) * DPR,
+  }));
+}
+resize();
+addEventListener('resize', resize);
+
+// ---- 入力: 月をつかむ・はなす ----
+addEventListener('pointerdown', e => {
+  if (e.target.closest && e.target.closest('.hud-top, .hud-bottom')) return;
+  const px = e.clientX * DPR, py = e.clientY * DPR;
+  if (Math.hypot(px - moon.x, py - moon.y) < moon.r * 2.6) {
+    moon.held = true;
+    moon.vx = 0; moon.vy = 0;
+    moon.lx = px; moon.ly = py;
+  }
+});
+addEventListener('pointermove', e => {
+  if (!moon.held) return;
+  const px = e.clientX * DPR, py = e.clientY * DPR;
+  moon.vx = px - moon.lx;
+  moon.vy = py - moon.ly;
+  moon.x = px; moon.y = py;
+  moon.lx = px; moon.ly = py;
+});
+function release() { moon.held = false; }
+addEventListener('pointerup', release);
+addEventListener('pointercancel', release);
+
+// ---- 波形 ----
+function seaLevel(f, x, t) {
+  // tide: 0(引き潮)〜1(満ち潮) → 海面の高さ
+  const base = f.y + f.h * (0.86 - f.tide * 0.42);
+  return base
+    + Math.sin(x * 0.012 / DPR + t * 0.0012) * 5 * DPR * (0.5 + f.tide)
+    + Math.sin(x * 0.027 / DPR - t * 0.0017) * 3 * DPR
+    + Math.sin(x * 0.051 / DPR + t * 0.0023) * 1.6 * DPR;
+}
+
+let last = performance.now();
+function loop(now) {
+  const t = now;
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  cx.fillStyle = '#0a0a0f';
+  cx.fillRect(0, 0, W, H);
+
+  // 星
+  for (const s of stars) {
+    cx.globalAlpha = 0.25 + 0.3 * Math.sin(t * 0.0013 + s.ph);
+    cx.fillStyle = '#f4f2ec';
+    cx.beginPath(); cx.arc(s.x, s.y, s.r, 0, 7); cx.fill();
+  }
+  cx.globalAlpha = 1;
+
+  // 月の自由漂い(はなした後はゆっくり減速し、すこし浮き沈み)
+  if (!moon.held) {
+    moon.x += moon.vx * 0.9;
+    moon.y += moon.vy * 0.9;
+    moon.vx *= 0.94; moon.vy *= 0.94;
+    moon.y += Math.sin(t * 0.0011) * 0.18 * DPR;
+  }
+  // 空の領域にやさしく留める
+  moon.x = Math.max(moon.r, Math.min(W - moon.r, moon.x));
+  moon.y = Math.max(H * 0.12, Math.min(H * 0.55, moon.y));
+  cv.dataset.moonx = (moon.x / W).toFixed(3);   // 検証用の覗き窓
+
+  // 潮汐: 月との横距離で満ち引き
+  for (const f of frames) {
+    const d = Math.abs(moon.x - f.cx) / (W * 0.5);
+    f.target = 0.18 + Math.max(0, 1 - d) * 0.72;
+    f.tide += (f.target - f.tide) * dt * 0.55;     // 潮はゆっくり応える
+  }
+  cv.dataset.tidea = frames[0].tide.toFixed(3);
+  cv.dataset.tideb = frames[1].tide.toFixed(3);
+
+  // 海
+  for (const f of frames) {
+    // 枠
+    cx.strokeStyle = 'rgba(244,242,236,0.10)';
+    cx.lineWidth = 1 * DPR;
+    cx.beginPath();
+    if (cx.roundRect) cx.roundRect(f.x, f.y, f.w, f.h, 18 * DPR); else cx.rect(f.x, f.y, f.w, f.h);
+    cx.stroke();
+
+    cx.save();
+    cx.beginPath();
+    if (cx.roundRect) cx.roundRect(f.x, f.y, f.w, f.h, 18 * DPR); else cx.rect(f.x, f.y, f.w, f.h);
+    cx.clip();
+
+    // 海面より下を塗る
+    cx.beginPath();
+    cx.moveTo(f.x, f.y + f.h);
+    for (let x = f.x; x <= f.x + f.w; x += 4 * DPR) cx.lineTo(x, seaLevel(f, x, t));
+    cx.lineTo(f.x + f.w, f.y + f.h);
+    cx.closePath();
+    const grad = cx.createLinearGradient(0, f.y + f.h * 0.3, 0, f.y + f.h);
+    grad.addColorStop(0, 'rgba(20,28,52,0.85)');
+    grad.addColorStop(1, 'rgba(8,10,20,0.95)');
+    cx.fillStyle = grad;
+    cx.fill();
+
+    // 波がしらの光(月が近いほど明るい)
+    const glow = 0.25 + (f.tide - 0.18) * 0.9;
+    cx.beginPath();
+    for (let x = f.x; x <= f.x + f.w; x += 4 * DPR) {
+      const y = seaLevel(f, x, t);
+      if (x === f.x) cx.moveTo(x, y); else cx.lineTo(x, y);
+    }
+    cx.strokeStyle = '#8ce8ff';
+    cx.globalAlpha = Math.min(0.85, glow);
+    cx.lineWidth = 1.6 * DPR;
+    cx.shadowColor = '#8ce8ff';
+    cx.shadowBlur = 16 * DPR * glow;
+    cx.stroke();
+    cx.shadowBlur = 0;
+    cx.globalAlpha = 1;
+
+    // 月の道(海面に落ちる月明かりの柱) — 月がその海の上にいる時だけ
+    if (moon.x > f.x && moon.x < f.x + f.w) {
+      const yTop = seaLevel(f, moon.x, t);
+      const gl = cx.createLinearGradient(0, yTop, 0, f.y + f.h);
+      gl.addColorStop(0, 'rgba(255,217,138,0.30)');
+      gl.addColorStop(1, 'rgba(255,217,138,0)');
+      cx.fillStyle = gl;
+      const wPath = 26 * DPR * (0.6 + f.tide);
+      cx.fillRect(moon.x - wPath / 2, yTop, wPath, f.y + f.h - yTop);
+    }
+
+    cx.restore();
+  }
+
+  // 海面のきらめき
+  for (const sp of sparkles) {
+    const f = frames[sp.f];
+    const x = f.x + sp.u * f.w;
+    const y = seaLevel(f, x, t) + 3 * DPR;
+    const a = (0.18 + 0.4 * Math.sin(t * 0.003 + sp.ph)) * (0.3 + f.tide);
+    if (a <= 0.02) continue;
+    cx.globalAlpha = Math.max(0, Math.min(0.7, a));
+    cx.drawImage(sparkSprite, x - sp.s / 2, y - sp.s / 2, sp.s, sp.s);
+  }
+  cx.globalAlpha = 1;
+
+  // 月
+  const ms = moon.r * 4.2;
+  cx.drawImage(moonSprite, moon.x - ms / 2, moon.y - ms / 2, ms, ms);
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

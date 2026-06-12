@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="暗闇に光を灯す、ブラウザ完結のインタラクティブ試作集。1日10試作。">
+<title>hikari — 1日10試作</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<meta property="og:title" content="hikari — インタラクティブ試作スタジオ">
+<meta property="og:description" content="暗闇に光を灯す、ブラウザ完結のインタラクティブ試作集。1日10試作。">
+<meta property="og:type" content="website">
+<meta property="og:image" content="assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="shared.css">
+<style>
+  /* shared.css の height:100% / overflow:hidden を解除し、document スクロールに戻す
+     （body 内部スクロール化を防ぎ、実機でアドレスバーが収納されるように） */
+  html, body { overflow: auto; height: auto; }
+  body { min-height: 100vh; min-height: 100svh; }
+
+  a { -webkit-tap-highlight-color: transparent; }
+
+  #stars { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; }
+
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 72px 32px 96px;
+    /* ノッチ端末の横画面で文字が欠けないように（env 非対応環境は上の 32px のまま） */
+    padding-left: max(32px, env(safe-area-inset-left));
+    padding-right: max(32px, env(safe-area-inset-right));
+  }
+
+  header.masthead { text-align: center; margin-bottom: 72px; }
+
+  .masthead-sub {
+    font-size: 12px;
+    letter-spacing: 0.45em;
+    color: var(--dimmer);
+    margin-bottom: 18px;
+  }
+
+  .masthead h1 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 44px;
+    letter-spacing: 0.22em;
+    text-shadow: 0 0 40px rgba(244,242,236,0.4);
+  }
+
+  .masthead p {
+    margin-top: 18px;
+    font-size: 13.5px;
+    letter-spacing: 0.18em;
+    color: var(--dim);
+    line-height: 2;
+  }
+
+  section.group { margin-bottom: 64px; }
+
+  .group-head {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 22px;
+  }
+
+  .group-head h2 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 19px;
+    letter-spacing: 0.2em;
+    color: var(--glow-white);
+  }
+
+  .group-head .group-tech {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--dimmer);
+  }
+
+  .group-head::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(244,242,236,0.18), transparent);
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+    gap: 18px;
+  }
+
+  a.card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 24px 24px 20px;
+    border: 1px solid rgba(244,242,236,0.12);
+    border-radius: 14px;
+    background: rgba(244,242,236,0.025);
+    text-decoration: none;
+    color: var(--glow-white);
+    transition: border-color 0.35s, box-shadow 0.35s, background 0.35s, transform 0.35s;
+  }
+
+  /* hover はマウス環境のみ（タッチでの発光残留を防ぐ） */
+  @media (hover: hover) {
+    a.card:hover {
+      border-color: rgba(255,217,138,0.45);
+      background: rgba(255,217,138,0.04);
+      box-shadow: 0 0 40px rgba(255,217,138,0.12), inset 0 0 30px rgba(255,217,138,0.04);
+      transform: translateY(-2px);
+    }
+  }
+
+  /* タップ・クリックの瞬間の反応 */
+  a.card:active {
+    transform: scale(0.985);
+    border-color: rgba(255,217,138,0.45);
+    background: rgba(255,217,138,0.05);
+    transition-duration: 0.12s;
+  }
+
+  .card-top { display: flex; align-items: baseline; gap: 14px; }
+
+  .card-no {
+    font-family: var(--serif);
+    font-size: 13px;
+    letter-spacing: 0.2em;
+    color: var(--glow-gold);
+    opacity: 0.85;
+  }
+
+  .card-title {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 20px;
+    letter-spacing: 0.1em;
+  }
+
+  .card-desc {
+    font-size: 12.5px;
+    line-height: 1.9;
+    letter-spacing: 0.06em;
+    color: var(--dim);
+    flex: 1;
+  }
+
+  .card-tech {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(244,242,236,0.08);
+    margin-top: 2px;
+    padding-top: 12px;
+  }
+
+  .ct {
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    color: var(--dim);
+    border: 1px solid rgba(244,242,236,0.16);
+    border-radius: 999px;
+    padding: 2px 10px;
+    white-space: nowrap;
+  }
+
+  .ct.proto { color: var(--glow-cyan); border-color: rgba(140,232,255,0.35); }
+  .ct.prod  { color: var(--glow-gold); border-color: rgba(255,217,138,0.35); }
+
+  footer.note {
+    text-align: center;
+    font-size: 11.5px;
+    letter-spacing: 0.2em;
+    color: var(--dimmer);
+    line-height: 2.2;
+  }
+
+  /* ---- 狭幅対応（デスクトップは不変） ---- */
+  /* 900px以下: 見出し＋装飾線を1行目、技術ラベルを2行目へ（横画面844pxの崩れも防ぐ） */
+  @media (max-width: 900px) {
+    .group-head { flex-wrap: wrap; row-gap: 6px; }
+    .group-head h2 { white-space: nowrap; }
+    .group-head .group-tech { width: 100%; order: 3; }
+  }
+
+  @media (max-width: 640px) {
+    .group-head h2 { font-size: 17px; letter-spacing: 0.14em; }  /* 320pxでも1行＋線が残る幅 */
+    .group-head .group-tech { font-size: 11.5px; }
+    .ct { font-size: 11.5px; white-space: normal; line-height: 1.6; }  /* 長い本実装タグは極小幅でピル内折返し */
+  }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+
+<div class="wrap">
+  <header class="masthead">
+    <div class="masthead-sub">INTERACTIVE STUDY — 10 PROTOTYPES IN A DAY</div>
+    <h1>hikari</h1>
+    <p>暗闇に光を灯す、10のインタラクティブ試作。<br>すべてブラウザで動く叩き台 ＋ 本実装の想定技術つき。</p>
+  </header>
+
+  <section class="group" data-screen-label="3D・AR空間">
+    <div class="group-head"><h2>壱 — 3D・AR空間</h2><span class="group-tech">試作: Three.js ／ 本実装: Unity・Swift</span></div>
+    <div class="cards">
+      <a class="card" href="demos/01-planet.html">
+        <div class="card-top"><span class="card-no">01</span><span class="card-title">惑星のすみか</span></div>
+        <div class="card-desc">iPadでお絵描きした生き物が、惑星の住人になって歩き出す。描くほどに惑星が賑わうARゲームの原型。</div>
+        <div class="card-tech"><span class="ct proto">試作: Three.js + Canvas</span><span class="ct prod">本実装: Unity + AR Foundation (C#)</span><span class="ct">WebSocket同期</span></div>
+      </a>
+      <a class="card" href="demos/02-library.html">
+        <div class="card-top"><span class="card-no">02</span><span class="card-title">宇宙図書館</span></div>
+        <div class="card-desc">幻想的な宇宙の図書館を歩く。透明の階段、浮遊する本、白い妖精の遊び場。部屋を暗くして遊ぶ3D空間。</div>
+        <div class="card-tech"><span class="ct proto">試作: Three.js 一人称視点</span><span class="ct prod">本実装: Unity URP / VR (OpenXR)</span></div>
+      </a>
+      <a class="card" href="demos/11-corridor.html">
+        <div class="card-top"><span class="card-no">11</span><span class="card-title">光の回廊</span></div>
+        <div class="card-desc">闇に灯る無限のアーチをくぐり、光の尾を引いて進む。長押しで加速、視線は指に揺れる。</div>
+        <div class="card-tech"><span class="ct proto">試作: Three.js</span><span class="ct prod">本実装: Unity URP / VR (OpenXR)</span></div>
+      </a>
+      <a class="card" href="demos/16-kurage.html">
+        <div class="card-top"><span class="card-no">16</span><span class="card-title">クラゲの天蓋</span></div>
+        <div class="card-desc">暗い海の底、頭上に漂う発光の群れ。触れれば光が連鎖する。ドラッグで深海を見回す。</div>
+        <div class="card-tech"><span class="ct proto">試作: Three.js</span><span class="ct prod">本実装: Unity URP / VR (OpenXR)</span></div>
+      </a>
+      <a class="card" href="demos/19-niwa/index.html">
+        <div class="card-top"><span class="card-no">19</span><span class="card-title">光の庭</span></div>
+        <div class="card-desc">夜の丘に種を描いて植える、育てて残せる庭。蛍が集まり、音が生まれ、保存した庭はまた咲く。10人がかりの旗艦作。</div>
+        <div class="card-tech"><span class="ct proto">試作: Three.js modules</span><span class="ct prod">本実装: Unity URP (C#)</span><span class="ct">Web Audio</span><span class="ct">localStorage</span></div>
+      </a>
+      <a class="card" href="demos/22-toudai.html">
+        <div class="card-top"><span class="card-no">22</span><span class="card-title">霧の灯台</span></div>
+        <div class="card-desc">ドラッグで灯台の光をまわすと、霧の沖の小さな舟が気づいて、港へ帰ってくる。あなたは光の番人。</div>
+        <div class="card-tech"><span class="ct proto">試作: Three.js</span><span class="ct prod">本実装: Unity URP / VR (OpenXR)</span></div>
+      </a>
+    </div>
+  </section>
+
+  <section class="group" data-screen-label="身体・音センシング">
+    <div class="group-head"><h2>弐 — 身体・音センシング</h2><span class="group-tech">試作: Canvas + Webカメラ・マイク ／ 本実装: Kinect・TouchDesigner</span></div>
+    <div class="cards">
+      <a class="card" href="demos/03-breath.html">
+        <div class="card-top"><span class="card-no">03</span><span class="card-title">息で咲く光の花野</span></div>
+        <div class="card-desc">マイクに息を吹きかけると花畑がざわめき、花びらが光の粒になって舞う。静けさの中で再び芽吹く。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas + Web Audio</span><span class="ct prod">本実装: TouchDesigner + マイク</span></div>
+      </a>
+      <a class="card" href="demos/05-mirror.html">
+        <div class="card-top"><span class="card-no">05</span><span class="card-title">群れと踊る鏡</span></div>
+        <div class="card-desc">カメラがあなたの動きを捉え、光の蝶の群れが集まり、驚いて散る。体ぜんぶがコントローラー。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas + Webカメラ差分</span><span class="ct prod">本実装: Unity + Azure Kinect / MediaPipe</span></div>
+      </a>
+      <a class="card" href="demos/07-pond.html">
+        <div class="card-top"><span class="card-no">07</span><span class="card-title">音紋の池</span></div>
+        <div class="card-desc">手を叩くと暗い水面に波紋がひろがり、光の魚が生まれる。音を重ねるほど池が満ちていく。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas + Web Audio</span><span class="ct prod">本実装: Max/MSP + TouchDesigner</span></div>
+      </a>
+      <a class="card" href="demos/12-nebula.html">
+        <div class="card-top"><span class="card-no">12</span><span class="card-title">声の星雲</span></div>
+        <div class="card-desc">声の大きさと高さで膨らみ色づく星雲。黙れば静かに眠る。マイクがなくても指の動きが声になる。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas + Web Audio</span><span class="ct prod">本実装: Max/MSP + TouchDesigner</span></div>
+      </a>
+      <a class="card" href="demos/20-echo-cave.html">
+        <div class="card-top"><span class="card-no">20</span><span class="card-title">こだまの洞窟</span></div>
+        <div class="card-desc">闇の奥へ呼びかけると、こだまが光の波紋になって遅れて帰ってくる。返るたびに淡く、深く。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas 2D + Web Audio</span><span class="ct prod">本実装: Max・MSP + 投影</span></div>
+      </a>
+      <a class="card" href="demos/24-shabon.html">
+        <div class="card-top"><span class="card-no">24</span><span class="card-title">夜のしゃぼん</span></div>
+        <div class="card-desc">息を吹きこむと、光のしゃぼん玉がふくらんで夜へ漂う。ふれると、ほどけて星屑になる。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas + Web Audio</span><span class="ct prod">本実装: TouchDesigner + マイク</span></div>
+      </a>
+    </div>
+  </section>
+
+  <section class="group" data-screen-label="タッチ・ドローイング">
+    <div class="group-head"><h2>参 — タッチ・ドローイング</h2><span class="group-tech">試作: Canvas 2D ／ 本実装: openFrameworks・Unity + タッチウォール</span></div>
+    <div class="cards">
+      <a class="card" href="demos/04-spirit.html">
+        <div class="card-top"><span class="card-no">04</span><span class="card-title">一筆書きの精霊</span></div>
+        <div class="card-desc">指で描いた一筆書きの線が、そのまま生き物になって泳ぎ出す。線の速さと曲がりで性格が変わる。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas 2D</span><span class="ct prod">本実装: openFrameworks (C++)</span></div>
+      </a>
+      <a class="card" href="demos/06-rain.html">
+        <div class="card-top"><span class="card-no">06</span><span class="card-title">言葉の雨</span></div>
+        <div class="card-desc">文字が雨のように降る。触れた言葉は弾けて、その意味する風景——雪、花、火——に変わる。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas 2D</span><span class="ct prod">本実装: Unity + タッチウォール (C#)</span></div>
+      </a>
+      <a class="card" href="demos/08-sand.html">
+        <div class="card-top"><span class="card-no">08</span><span class="card-title">光の砂庭</span></div>
+        <div class="card-desc">発光する砂の禅庭。なぞると砂紋が描かれ、紋様の交差から光の虫が生まれる。やがて風が紋を消す。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas 2D</span><span class="ct prod">本実装: TouchDesigner + 赤外タッチ</span></div>
+      </a>
+      <a class="card" href="demos/13-ito-koto.html">
+        <div class="card-top"><span class="card-no">13</span><span class="card-title">光の糸琴</span></div>
+        <div class="card-desc">張った光の糸をなぞれば、弦が震えて粒をこぼし小さく鳴る。糸はやがて闇に溶ける。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas 2D + Web Audio</span><span class="ct prod">本実装: openFrameworks (C++)</span></div>
+      </a>
+      <a class="card" href="demos/14-tomoshibi.html">
+        <div class="card-top"><span class="card-no">14</span><span class="card-title">ふれると灯る街</span></div>
+        <div class="card-desc">ふれた窓から灯がともり、人影と星が増える夜の街。放っておくと灯りはひとつずつ眠る。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas 2D</span><span class="ct prod">本実装: Unity + タッチウォール (C#)</span></div>
+      </a>
+      <a class="card" href="demos/17-mizukagami.html">
+        <div class="card-top"><span class="card-no">17</span><span class="card-title">水鏡の文字</span></div>
+        <div class="card-desc">夜に描いた光の文字が水面に揺らぎ、粒となって波紋に還る。波が収まれば水面はまた鏡になる。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas 2D</span><span class="ct prod">本実装: openFrameworks (C++)</span></div>
+      </a>
+      <a class="card" href="demos/23-sukima.html">
+        <div class="card-top"><span class="card-no">23</span><span class="card-title">夜のすきま</span></div>
+        <div class="card-desc">指で夜を削ると、むこうがわの光がこぼれる。すきまは、ゆっくりと閉じていく。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas 2D</span><span class="ct prod">本実装: openFrameworks (C++) + タッチウォール</span></div>
+      </a>
+    </div>
+  </section>
+
+  <section class="group" data-screen-label="マルチデバイス連携">
+    <div class="group-head"><h2>肆 — マルチデバイス連携</h2><span class="group-tech">試作: Canvas（1画面で擬似再現）／ 本実装: Swift + WebSocket + プロジェクター</span></div>
+    <div class="cards">
+      <a class="card" href="demos/09-constellation.html">
+        <div class="card-top"><span class="card-no">09</span><span class="card-title">星座を紡ぐ夜</span></div>
+        <div class="card-desc">星と星をなぞって繋ぐと、その形から星座の獣が生まれて夜空を駆ける。みんなの獣が同じ空に住む。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas 2D</span><span class="ct prod">本実装: Unity + スマホ連携 (WebSocket)</span></div>
+      </a>
+      <a class="card" href="demos/10-fireworks.html">
+        <div class="card-top"><span class="card-no">10</span><span class="card-title">影に咲く花火</span></div>
+        <div class="card-desc">スワイプで光の種を打ち上げると花火が咲き、残光が地に落ちて花畑として積もっていく。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas + スワイプ</span><span class="ct prod">本実装: Swift (加速度) + WebSocket + 投影</span></div>
+      </a>
+      <a class="card" href="demos/15-wataridori.html">
+        <div class="card-top"><span class="card-no">15</span><span class="card-title">渡り鳥の手紙</span></div>
+        <div class="card-desc">スワイプから生まれた光の鳥が境界を越え、とおくの空で星の手紙になる。ふたつの端末をひとつの夜が繋ぐ。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas 2D（擬似2画面）</span><span class="ct prod">本実装: Swift + WebSocket + 投影</span></div>
+      </a>
+      <a class="card" href="demos/18-tourou.html">
+        <div class="card-top"><span class="card-no">18</span><span class="card-title">灯籠流しの川</span></div>
+        <div class="card-desc">触れて灯した灯籠を川へ送ると、とおくの岸辺に金色が並ぶ。流すほど川がきらめく。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas 2D（擬似2画面）</span><span class="ct prod">本実装: Swift + WebSocket + 投影</span></div>
+      </a>
+      <a class="card" href="demos/21-furiko.html">
+        <div class="card-top"><span class="card-no">21</span><span class="card-title">振り子の夜</span></div>
+        <div class="card-desc">三台の端末に吊られた光の振り子。ばらばらに乱しても、見ているうちにひとつの呼吸へそろってゆく。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas 2D（1画面で擬似再現）</span><span class="ct prod">本実装: Swift (加速度) + WebSocket + 投影</span></div>
+      </a>
+      <a class="card" href="demos/25-michishio.html">
+        <div class="card-top"><span class="card-no">25</span><span class="card-title">月のみちしお</span></div>
+        <div class="card-desc">ふたつの端末は、それぞれ小さな海。月を渡すと、月の下の海が満ちて、とおい海は引いていく。</div>
+        <div class="card-tech"><span class="ct proto">試作: Canvas 2D（1画面で擬似再現）</span><span class="ct prod">本実装: Swift (加速度) + WebSocket + 投影</span></div>
+      </a>
+    </div>
+  </section>
+
+  <footer class="note">
+    各カードを開くとその場で遊べます ／ 部屋を暗くして全画面推奨<br>
+    PROTOTYPED IN HTML — PRODUCTION TARGETS: UNITY (C#) · SWIFT · TOUCHDESIGNER · openFrameworks
+  </footer>
+</div>
+
+<script>
+  // 背景の星（座標は0〜1で保持し、描画時に画面サイズへスケール。
+  // アドレスバー伸縮等のリサイズでも夜空が組み変わらない）
+  const cv = document.getElementById('stars');
+  const cx = cv.getContext('2d');
+  const DPR = Math.min(devicePixelRatio, 2);
+  let W, H;
+  const stars = Array.from({length: 160}, () => ({
+    x: Math.random(), y: Math.random(),
+    r: Math.random() * 1.4 + 0.3,
+    p: Math.random() * Math.PI * 2,
+    s: 0.4 + Math.random() * 0.9
+  }));
+  function resize() {
+    W = cv.width = innerWidth * DPR;
+    H = cv.height = innerHeight * DPR;
+  }
+  resize();
+  addEventListener('resize', resize);
+  function tick(t) {
+    cx.clearRect(0, 0, W, H);
+    for (const s of stars) {
+      const a = 0.25 + 0.55 * (0.5 + 0.5 * Math.sin(t * 0.001 * s.s + s.p));
+      cx.beginPath();
+      cx.arc(s.x * W, s.y * H, s.r * DPR, 0, 7);
+      cx.fillStyle = `rgba(244,242,236,${a})`;
+      cx.fill();
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+</script>
+</body>
+</html>

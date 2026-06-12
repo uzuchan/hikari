@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>11 光の回廊</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="闇に灯る無限のアーチをくぐり、光の尾を引いて進む。長押しで加速、視線は指に揺れる。">
+<meta property="og:title" content="11 光の回廊 — hikari">
+<meta property="og:description" content="闇に灯る無限のアーチをくぐり、光の尾を引いて進む。長押しで加速、視線は指に揺れる。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+<style>
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+</style>
+</head>
+<body data-screen-label="11 光の回廊">
+
+<canvas id="scene"></canvas>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 11</div>
+    <div class="hud-title">光の回廊</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">指先やマウスの位置で視線が揺れる ／ 長押しで加速 — 光が尾を引く</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Three.js</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">Unity URP / VR (OpenXR)</span></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/three@0.149.0/build/three.min.js"></script>
+<script>
+// ---- 土台: レンダラ / シーン / カメラ ----
+const canvas = document.getElementById('scene');
+// MSAA はソフトウェアGL(SwiftShader等=ヘッドレス検証環境)ではフレーム時間の過半を食うため、
+// 実GPUのときだけ有効化する。実機・実画面での見た目は従来と同一。
+const isSoftwareGL = (() => {
+  try {
+    const probe = document.createElement('canvas').getContext('webgl2')
+               || document.createElement('canvas').getContext('webgl');
+    const ext = probe && probe.getExtension('WEBGL_debug_renderer_info');
+    const r = ext ? probe.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
+    return /swiftshader|llvmpipe|software/i.test(r || '');
+  } catch (e) { return false; }
+})();
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isSoftwareGL, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x04040a);
+scene.fog = new THREE.FogExp2(0x04040a, 0.022);
+
+const camera = new THREE.PerspectiveCamera(64, 1, 0.1, 400);
+camera.position.set(0, 1.7, 0);
+
+const PALETTE = ['#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
+
+// ---- 星空（回廊の彼方・霧の影響を受けない）----
+{
+  const g = new THREE.BufferGeometry(), p = [];
+  for (let i = 0; i < 900; i++) {
+    const v = new THREE.Vector3().randomDirection().multiplyScalar(120 + Math.random() * 150);
+    p.push(v.x, Math.abs(v.y) * 0.8 - 10, v.z);
+  }
+  g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({
+    color: 0xf4f2ec, size: 0.45, transparent: true, opacity: 0.7, fog: false
+  })));
+}
+
+// ---- ライト ----
+scene.add(new THREE.AmbientLight(0x36406a, 0.8));
+const dir = new THREE.DirectionalLight(0x8090cc, 0.5);
+dir.position.set(2, 6, 3);
+scene.add(dir);
+
+// ---- 床：暗い帯 + 左右の導きの光 ----
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(30, 400),
+  new THREE.MeshStandardMaterial({ color: 0x0a0c16, roughness: 0.35, metalness: 0.6 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.position.set(0, 0, -150);
+scene.add(floor);
+for (const sx of [-4.6, 4.6]) {
+  const rail = new THREE.Mesh(
+    new THREE.BoxGeometry(0.07, 0.03, 400),
+    new THREE.MeshStandardMaterial({
+      color: 0x101522, emissive: 0x8ce8ff, emissiveIntensity: 0.6,
+      roughness: 0.4, metalness: 0.2
+    })
+  );
+  rail.position.set(sx, 0.02, -150);
+  scene.add(rail);
+}
+
+// ---- 光のアーチ（奥から手前へ流れ、PALETTE が順に灯る）----
+const ARCH_N = 26;          // 表示本数
+const ARCH_GAP = 9;         // 間隔
+const ARCH_R = 4.6;         // アーチ半径
+// セグメントは「弦誤差が1px未満」まで削減（芯: 半径4.6の弧64分割で誤差0.002、管8角形で0.007）
+const archGeo = new THREE.TorusGeometry(ARCH_R, 0.085, 8, 64, Math.PI);
+// グローレイヤ：同じ弧を太いチューブ＋加算ブレンドで重ね、光の滲みを作る
+// （グラデは毎ピクセルのテクスチャ参照なので粗い分割でも滑らか。輪郭はα→0で溶けて見えない）
+const archGlowGeo = new THREE.TorusGeometry(ARCH_R, 0.30, 8, 48, Math.PI);
+const archHaloGeo = new THREE.TorusGeometry(ARCH_R, 0.85, 6, 36, Math.PI);
+// チューブ周方向の減衰グラデ：カメラ側（v=0.25）が最も明るく、輪郭で消える
+// → 加算ブレンドと合わせて「縁の硬い帯」ではなく「滲む光」になる
+const tubeGradTex = (() => {
+  const c = document.createElement('canvas'); c.width = 2; c.height = 128;
+  const g = c.getContext('2d');
+  for (let y = 0; y < 128; y++) {
+    const v = 1 - (y + 0.5) / 128;               // flipY 込みの v 座標
+    const d = Math.abs(v - 0.25) / 0.25;          // 0.25 を頂点に 0..0.5 で減衰
+    const a = v <= 0.5 ? Math.pow(Math.max(0, 1 - d), 2.2) : 0;
+    const k = Math.round(a * 255);
+    g.fillStyle = `rgb(${k},${k},${k})`;
+    g.fillRect(0, y, 2, 1);
+  }
+  return new THREE.CanvasTexture(c);
+})();
+// 足元グロー用の放射グラデ（1枚のテクスチャを全インスタンスで再利用）
+// 板を 2.4→2.0 に絞ったぶんストップ位置を 1.2 倍へ写像し、実寸の減衰カーブを維持
+// （切り落とすのは加算α<0.05 の最外殻のみ＝ほぼ黒に溶けている領域。塗り面積 -30%）
+const glowTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(64, 64, 2, 64, 64, 62);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.307, 'rgba(255,255,255,0.5)');
+  gr.addColorStop(0.727, 'rgba(255,255,255,0.14)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+})();
+// 描画は役割ごとの InstancedMesh に統合する（26本×7オブジェクト=182draw → 5draw）。
+// 加算ブレンドは「色×不透明度」を instanceColor に焼き込んでも合成結果が同値なので、
+// 層ごとの per-arch opacity は色に畳み込む。芯の発光も emissive×強度 ≒ basic色×強度。
+const coreMesh = new THREE.InstancedMesh(archGeo,
+  new THREE.MeshBasicMaterial({ color: 0xffffff }), ARCH_N);
+// 加算レイヤの霧は fog:false にして自前で色へ畳み込む（下の loop 参照）。
+// シェーダ霧だと mix(fog,C,f)×α の α が素材一律=1 になり、霧色×(1-f) が層の数だけ
+// 全力で加算されて消失点が青く濁る。旧実装の α=不透明度 と同じ式を per-arch で焼き込む。
+const glowMesh = new THREE.InstancedMesh(archGlowGeo,
+  new THREE.MeshBasicMaterial({
+    map: tubeGradTex, color: 0xffffff, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false
+  }), ARCH_N);
+const haloMesh = new THREE.InstancedMesh(archHaloGeo,
+  new THREE.MeshBasicMaterial({
+    map: tubeGradTex, color: 0xffffff, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false
+  }), ARCH_N);
+// 足元の灯（小さな球）と床へ滲むグロー（カメラへ向ける板＝スプライト相当）
+const footMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 8, 6),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 }), ARCH_N * 2);
+const footGlowMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1),
+  new THREE.MeshBasicMaterial({
+    map: glowTex, color: 0xffffff, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false
+  }), ARCH_N * 2);
+const archMeshes = [coreMesh, glowMesh, haloMesh, footMesh, footGlowMesh];
+for (const m of archMeshes) {
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  m.frustumCulled = false;   // インスタンスはz方向に234m散るため一括カリングしない
+  scene.add(m);
+}
+
+const arches = [];
+let archSeq = 0;            // 通算番号 → PALETTE を順に灯す
+
+function dressArch(a) {
+  a.color.set(PALETTE[archSeq % PALETTE.length]);
+  a.phase = archSeq * 0.7;
+  archSeq++;
+}
+for (let i = 0; i < ARCH_N; i++) {
+  const a = { z: -8 - i * ARCH_GAP, color: new THREE.Color(), phase: 0 };
+  dressArch(a);
+  arches.push(a);
+  // 初期色を書いて instanceColor 属性を確保
+  coreMesh.setColorAt(i, a.color); glowMesh.setColorAt(i, a.color); haloMesh.setColorAt(i, a.color);
+  footMesh.setColorAt(i * 2, a.color); footMesh.setColorAt(i * 2 + 1, a.color);
+  footGlowMesh.setColorAt(i * 2, a.color); footGlowMesh.setColorAt(i * 2 + 1, a.color);
+}
+for (const m of archMeshes) m.instanceColor.setUsage(THREE.DynamicDrawUsage);
+// ループ内で使い回す一時オブジェクト（毎フレーム生成しない）
+const _m4 = new THREE.Matrix4(), _c = new THREE.Color();
+const _pos = new THREE.Vector3(), _spriteScale = new THREE.Vector3(2.0, 2.0, 1);
+
+// ---- 漂う光の塵（回廊の空気感）----
+const dustTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.4, 'rgba(255,255,255,0.45)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const DUST_N = 240, DUST_LEN = 240;
+const dustGeo = new THREE.BufferGeometry();
+const dpos = new Float32Array(DUST_N * 3);
+for (let i = 0; i < DUST_N; i++) {
+  dpos[i * 3]     = (Math.random() - 0.5) * 11;
+  dpos[i * 3 + 1] = 0.2 + Math.random() * 5.5;
+  dpos[i * 3 + 2] = -Math.random() * DUST_LEN;
+}
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dpos, 3));
+const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({
+  map: dustTex, color: 0xf4f2ec, size: 0.16, transparent: true, opacity: 0.55,
+  depthWrite: false, blending: THREE.AdditiveBlending
+}));
+scene.add(dust);
+
+// ---- 加速時の光の尾（流線）----
+const STREAK_N = 110;
+const streakGeo = new THREE.BufferGeometry();
+const spos = new Float32Array(STREAK_N * 2 * 3);
+const streaks = [];
+for (let i = 0; i < STREAK_N; i++) {
+  const a = Math.random() * Math.PI * 2;
+  const r = 2.2 + Math.random() * 3.2;
+  streaks.push({
+    x: Math.cos(a) * r,
+    y: Math.max(0.3, 2.2 + Math.sin(a) * r * 0.8),
+    z: -Math.random() * 120
+  });
+}
+streakGeo.setAttribute('position', new THREE.BufferAttribute(spos, 3));
+const streakMat = new THREE.LineBasicMaterial({
+  color: 0x8ce8ff, transparent: true, opacity: 0,
+  blending: THREE.AdditiveBlending, depthWrite: false
+});
+const streakLines = new THREE.LineSegments(streakGeo, streakMat);
+scene.add(streakLines);
+
+// ---- 入力：視線の揺れ + 長押し加速 ----
+let mx = 0, my = 0;          // -1..1 正規化ポインタ
+let holding = false;
+addEventListener('pointermove', e => {
+  mx = (e.clientX / innerWidth) * 2 - 1;
+  my = (e.clientY / innerHeight) * 2 - 1;
+});
+addEventListener('pointerdown', e => {
+  holding = true;
+  mx = (e.clientX / innerWidth) * 2 - 1;
+  my = (e.clientY / innerHeight) * 2 - 1;
+});
+addEventListener('pointerup', () => holding = false);
+addEventListener('pointercancel', () => holding = false);
+
+// ---- リサイズ ----
+function fit() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+fit();
+addEventListener('resize', fit);
+
+// ---- ループ ----
+const BASE_SPEED = 5.5, MAX_SPEED = 34;
+let speed = BASE_SPEED;
+let yaw = 0, pitch = 0, sway = 0;
+const clock = new THREE.Clock();
+
+function loop() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  // 加速（長押しでなめらかに立ち上がり、離すと戻る）
+  const target = holding ? MAX_SPEED : BASE_SPEED;
+  speed += (target - speed) * (holding ? 1.6 : 2.4) * dt;
+  const boost = (speed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED); // 0..1
+
+  // 視線の揺れ：ポインタへゆっくり吸い付く + 歩みの揺らぎ
+  yaw   += (-mx * 0.42 - yaw)   * 2.2 * dt;
+  pitch += (-my * 0.26 - pitch) * 2.2 * dt;
+  sway = Math.sin(t * 1.4) * 0.05;
+  camera.rotation.set(pitch + Math.sin(t * 0.9) * 0.012, yaw, sway * 0.4);
+  camera.position.x = Math.sin(t * 0.7) * 0.18 + mx * 0.5;
+  camera.position.y = 1.7 + Math.sin(t * 1.8) * 0.05;
+  camera.fov = 64 + boost * 14;           // 加速で視野が開く
+  camera.updateProjectionMatrix();
+
+  // アーチ：奥から手前へ。通り過ぎたら奥へ送り、次の色を灯す
+  for (let i = 0; i < ARCH_N; i++) {
+    const a = arches[i];
+    a.z += speed * dt;
+    if (a.z > 4) {
+      a.z -= ARCH_N * ARCH_GAP;
+      dressArch(a);
+    }
+    // 近いほど明るく灯り、ゆっくり呼吸する
+    const near = Math.max(0, 1 - Math.abs(a.z) / 130);
+    const breath = 0.8 + 0.2 * Math.sin(t * 1.6 + a.phase);
+    const ei = breath * (0.55 + near * 1.05) + boost * 0.9;
+    _m4.makeTranslation(0, 0, a.z);
+    coreMesh.setMatrixAt(i, _m4);
+    glowMesh.setMatrixAt(i, _m4);
+    haloMesh.setMatrixAt(i, _m4);
+    // 芯＝色×強度（+0.06 は旧 MeshStandard の環境光ぶんの補償）
+    coreMesh.setColorAt(i, _c.copy(a.color).multiplyScalar(ei + 0.06));
+    // 加算レイヤの霧を per-arch で再現：mix(霧色, C, f)×不透明度（FogExp2 と同式。
+    // アーチは視線に直交する面に乗るため、霧深度は1本につきほぼ一定）
+    const f = Math.exp(-Math.pow(0.022 * Math.abs(a.z), 2));
+    // 滲みレイヤを発光と同期（白飛びしない上限つき。不透明度は色に焼き込む）
+    glowMesh.setColorAt(i, _c.copy(a.color).lerp(scene.fog.color, 1 - f).multiplyScalar(Math.min(0.85, ei * 0.55)));
+    haloMesh.setColorAt(i, _c.copy(a.color).lerp(scene.fog.color, 1 - f).multiplyScalar(Math.min(0.4, ei * 0.24)));
+    const footGlow = breath * (0.25 + near * 0.45);
+    for (let s = 0; s < 2; s++) {
+      const k = i * 2 + s, sx = s === 0 ? -ARCH_R : ARCH_R;
+      footMesh.setMatrixAt(k, _m4.makeTranslation(sx, 0.06, a.z));
+      footMesh.setColorAt(k, a.color);
+      // 床グローはカメラへ向けた板（旧スプライトと同じ見え方。霧も同様に焼き込む）
+      footGlowMesh.setMatrixAt(k, _m4.compose(_pos.set(sx, 0.25, a.z), camera.quaternion, _spriteScale));
+      footGlowMesh.setColorAt(k, _c.copy(a.color).lerp(scene.fog.color, 1 - f).multiplyScalar(footGlow));
+    }
+  }
+  for (const m of archMeshes) {
+    m.instanceMatrix.needsUpdate = true;
+    m.instanceColor.needsUpdate = true;
+  }
+
+  // 光の塵
+  const dArr = dustGeo.attributes.position.array;
+  for (let i = 0; i < DUST_N; i++) {
+    dArr[i * 3 + 2] += speed * dt * 0.85;
+    dArr[i * 3 + 1] += Math.sin(t * 0.8 + i) * 0.0035;
+    if (dArr[i * 3 + 2] > 2) dArr[i * 3 + 2] -= DUST_LEN;
+  }
+  dustGeo.attributes.position.needsUpdate = true;
+
+  // 光の尾：速度に応じて伸び、加速時だけ姿を見せる
+  const sArr = streakGeo.attributes.position.array;
+  const tail = 0.25 + boost * 3.2;
+  for (let i = 0; i < STREAK_N; i++) {
+    const s = streaks[i];
+    s.z += speed * dt * 1.25;
+    if (s.z > 2) s.z -= 120;
+    const o = i * 6;
+    sArr[o]     = s.x; sArr[o + 1] = s.y; sArr[o + 2] = s.z;
+    sArr[o + 3] = s.x; sArr[o + 4] = s.y; sArr[o + 5] = s.z - tail;
+  }
+  streakGeo.attributes.position.needsUpdate = true;
+  streakMat.opacity = boost * 0.55;
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

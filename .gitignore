@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+
+# 検査のスクリーンショット証跡(重いので除外。スクリプトとログは含める)
+_check/*.png
+_check/*.jpg
+_check/**/*.png
+_check/**/*.jpg
+.claude/scheduled_tasks.lock

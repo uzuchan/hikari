@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>18 灯籠流しの川</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="触れて灯した灯籠を川へ送ると、とおくの岸辺に金色が並ぶ。流すほど川がきらめく。">
+<meta property="og:title" content="18 灯籠流しの川 — hikari">
+<meta property="og:description" content="触れて灯した灯籠を川へ送ると、とおくの岸辺に金色が並ぶ。流すほど川がきらめく。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+<style>
+  /* 2端末の見立て: 上下の岸のラベル */
+  .bank-label {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--serif);
+    font-size: 12px;
+    letter-spacing: 0.34em;
+    color: var(--dimmer);
+    pointer-events: none;
+    z-index: 5;
+    text-shadow: 0 0 16px rgba(244, 242, 236, 0.18);
+    white-space: nowrap;
+    text-align: center;
+  }
+  .bank-label small {
+    display: block;
+    margin-top: 6px;
+    font-family: var(--sans);
+    font-size: 9px;
+    letter-spacing: 0.26em;
+    color: rgba(244, 242, 236, 0.18);
+  }
+  .bank-far  { top: 12%; }
+  .bank-near { bottom: 24.5%; }
+</style>
+</head>
+<body data-screen-label="18 灯籠流しの川">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="bank-label bank-far">とおくの岸<small>DEVICE B</small></div>
+<div class="bank-label bank-near">あなたの岸<small>DEVICE A</small></div>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 18</div>
+    <div class="hud-title">灯籠流しの川</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">下の岸の灯籠にふれると灯がともります。もう一度つかんで、川へすっと送り出してください。<br>灯籠は光の帯を曳いて川を渡り、とおくの岸辺に並んで灯り続けます。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas 2D（擬似2画面）</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">Swift + WebSocket + 投影</span></div>
+  </div>
+</div>
+
+<script>
+// ---- 土台: DPR対応キャンバス & ループ ----
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+const DPR = Math.min(devicePixelRatio, 2);
+let W, H, RIVER_TOP, RIVER_BOT, FAR_BANK, SHORE_Y;
+
+const PALETTE = ['#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
+const GOLD = '#ffd98a';
+
+const SLOT_N = 5;
+let slots = [];      // あなたの岸に待つ灯籠
+let floating = [];   // 川を渡る灯籠
+let arrived = [];    // とおくの岸に着いた灯籠
+let sparks = [];     // 火を入れた瞬間の火の粉
+let ripples = [];    // 水面の波紋
+let glints = [];     // 川面の金のきらめき
+let flows = [];      // 川の流れの筋
+let stars = [];      // 岸辺にまたたく微光
+let totalSent = 0;
+
+function makeSlots() {
+  const old = slots;
+  slots = [];
+  for (let i = 0; i < SLOT_N; i++) {
+    const hx = W * (0.5 + (i - (SLOT_N - 1) / 2) * 0.17);
+    const prev = old[i];
+    slots.push({
+      hx, hy: SHORE_Y,
+      x: hx, y: SHORE_Y,
+      lit: prev ? prev.lit : false,
+      held: false, ret: false,
+      alpha: prev ? prev.alpha : 1,
+      ph: prev ? prev.ph : Math.random() * 7
+    });
+  }
+}
+
+function resize() {
+  W = cv.width = innerWidth * DPR;
+  H = cv.height = innerHeight * DPR;
+  RIVER_TOP = H * 0.30;
+  RIVER_BOT = H * 0.70;
+  FAR_BANK = RIVER_TOP - 18 * DPR;
+  SHORE_Y = RIVER_BOT + (H - RIVER_BOT) * 0.5;
+  makeSlots();
+  for (const a of arrived) {
+    a.x = Math.min(Math.max(a.x, 24 * DPR), W - 24 * DPR);
+    a.y = FAR_BANK + a.jit;
+  }
+  flows = Array.from({ length: 16 }, () => ({
+    x: Math.random() * W,
+    y: RIVER_TOP + (0.06 + Math.random() * 0.88) * (RIVER_BOT - RIVER_TOP),
+    len: (36 + Math.random() * 100) * DPR,
+    sp: (0.25 + Math.random() * 0.55) * DPR,
+    a: 0.035 + Math.random() * 0.075,
+    ph: Math.random() * 7
+  }));
+  glints = Array.from({ length: 110 }, () => ({
+    x: Math.random() * W,
+    y: RIVER_TOP + Math.random() * (RIVER_BOT - RIVER_TOP),
+    sp: (0.2 + Math.random() * 0.5) * DPR,
+    r: (0.5 + Math.random() * 1.1) * DPR,
+    ph: Math.random() * 7,
+    tw: 0.002 + Math.random() * 0.004
+  }));
+  stars = Array.from({ length: 90 }, () => {
+    const top = Math.random() < 0.55;
+    return {
+      x: Math.random() * W,
+      y: top ? Math.random() * RIVER_TOP * 0.92 : RIVER_BOT + 6 * DPR + Math.random() * (H - RIVER_BOT - 12 * DPR),
+      r: (0.35 + Math.random() * 0.9) * DPR,
+      c: Math.random() < 0.78 ? '#f4f2ec' : PALETTE[Math.floor(Math.random() * PALETTE.length)],
+      ph: Math.random() * 7,
+      sp: 0.001 + Math.random() * 0.002
+    };
+  });
+}
+resize();
+addEventListener('resize', resize);
+
+// ---- 灯籠の絵 ----
+function drawLantern(x, y, s, lit, t, ph, alpha) {
+  const flick = 0.78 + 0.14 * Math.sin(t * 0.012 + ph * 3.1) + 0.08 * Math.sin(t * 0.021 + ph * 7.7);
+  cx.save();
+  cx.translate(x, y);
+  cx.globalAlpha = alpha;
+  if (lit) {
+    // 紙の胴 — 内から灯る
+    const g = cx.createLinearGradient(0, -s * 0.7, 0, s * 0.7);
+    g.addColorStop(0, `rgba(255, 244, 214, ${0.92 * flick})`);
+    g.addColorStop(0.55, `rgba(255, 217, 138, ${0.82 * flick})`);
+    g.addColorStop(1, `rgba(228, 158, 78, ${0.62 * flick})`);
+    cx.fillStyle = g;
+    cx.shadowColor = GOLD;
+    cx.shadowBlur = 24 * DPR * flick;
+  } else {
+    cx.fillStyle = 'rgba(244, 242, 236, 0.05)';
+    cx.shadowBlur = 0;
+  }
+  cx.beginPath(); // 胴（上すぼまりの行灯）
+  cx.moveTo(-s * 0.36, -s * 0.6);
+  cx.lineTo(s * 0.36, -s * 0.6);
+  cx.lineTo(s * 0.5, s * 0.6);
+  cx.lineTo(-s * 0.5, s * 0.6);
+  cx.closePath();
+  cx.fill();
+  cx.shadowBlur = 0;
+  // 骨組み
+  cx.strokeStyle = lit ? 'rgba(90, 52, 24, 0.55)' : 'rgba(244, 242, 236, 0.22)';
+  cx.lineWidth = Math.max(1, 0.08 * s);
+  cx.stroke();
+  cx.beginPath();
+  cx.moveTo(-s * 0.43, 0); cx.lineTo(s * 0.43, 0);
+  cx.stroke();
+  // 屋根と台座
+  cx.strokeStyle = lit ? 'rgba(70, 40, 20, 0.8)' : 'rgba(244, 242, 236, 0.28)';
+  cx.lineWidth = Math.max(1, 0.13 * s);
+  cx.beginPath();
+  cx.moveTo(-s * 0.48, -s * 0.6); cx.lineTo(s * 0.48, -s * 0.6);
+  cx.moveTo(-s * 0.6, s * 0.62); cx.lineTo(s * 0.6, s * 0.62);
+  cx.stroke();
+  // 炎の芯
+  if (lit) {
+    cx.fillStyle = '#fff6dd';
+    cx.shadowColor = '#fff6dd';
+    cx.shadowBlur = 10 * DPR * flick;
+    cx.beginPath();
+    cx.arc(0, -s * 0.06, s * 0.13 * (0.8 + 0.3 * flick), 0, 7);
+    cx.fill();
+  }
+  cx.restore();
+  cx.globalAlpha = 1;
+  cx.shadowBlur = 0;
+}
+
+// 川面に映る光の帯（揺れる横の切れ端）
+function drawReflection(x, yTop, s, t, ph, alpha) {
+  for (let k = 0; k < 7; k++) {
+    const yy = yTop + (k + 0.7) * s * 0.62;
+    if (yy > RIVER_BOT - 2 * DPR) break;
+    const sway = Math.sin(t * 0.0036 + k * 1.35 + ph) * (1 + k * 0.7) * DPR;
+    const w = s * (0.85 - k * 0.09);
+    cx.globalAlpha = alpha * (0.34 - k * 0.042) * (0.7 + 0.3 * Math.sin(t * 0.006 + k * 2 + ph));
+    cx.strokeStyle = GOLD;
+    cx.shadowColor = GOLD;
+    cx.shadowBlur = 7 * DPR;
+    cx.lineWidth = (1.6 - k * 0.13) * DPR;
+    cx.lineCap = 'round';
+    cx.beginPath();
+    cx.moveTo(x - w + sway, yy);
+    cx.lineTo(x + w + sway, yy);
+    cx.stroke();
+  }
+  cx.globalAlpha = 1;
+  cx.shadowBlur = 0;
+}
+
+function ignite(x, y) {
+  for (let i = 0; i < 14; i++) {
+    sparks.push({
+      x, y: y - 4 * DPR,
+      vx: (Math.random() - 0.5) * 1.6 * DPR,
+      vy: (-0.4 - Math.random() * 1.4) * DPR,
+      r: (0.6 + Math.random() * 1.2) * DPR,
+      a: 0.9,
+      c: Math.random() < 0.8 ? GOLD : '#fff6dd'
+    });
+  }
+}
+
+// ---- 送り出し ----
+function launchFrom(slot, vy0) {
+  floating.push({
+    x: slot.x, y: slot.y,
+    vx: (0.25 + Math.random() * 0.25) * DPR,
+    vy: Math.max(-4.5 * DPR, Math.min(-1.1 * DPR, vy0)),
+    ph: Math.random() * 7,
+    inWater: slot.y < RIVER_BOT
+  });
+  totalSent++;
+  slot.lit = false;
+  slot.held = false;
+  slot.ret = false;
+  slot.x = slot.hx; slot.y = slot.hy;
+  slot.alpha = 0; // 新しい灯籠が静かに現れる
+}
+
+// ---- 入力（マウス・タッチ統一） ----
+let held = null, hist = [];
+addEventListener('pointerdown', e => {
+  const x = e.clientX * DPR, y = e.clientY * DPR;
+  let best = null, bd = 58 * DPR;
+  for (const s of slots) {
+    if (s.alpha < 0.6) continue;
+    const d = Math.hypot(x - s.x, y - s.y);
+    if (d < bd) { bd = d; best = s; }
+  }
+  if (!best) return;
+  if (!best.lit) {
+    best.lit = true;
+    ignite(best.x, best.y);
+  } else {
+    held = best;
+    best.held = true;
+    best.ret = false;
+    hist = [{ x, y, t: performance.now() }];
+  }
+});
+addEventListener('pointermove', e => {
+  if (!held) return;
+  const x = Math.min(Math.max(e.clientX * DPR, 30 * DPR), W - 30 * DPR);
+  const y = Math.min(Math.max(e.clientY * DPR, RIVER_BOT - 26 * DPR), H - 24 * DPR);
+  held.x = x; held.y = y;
+  hist.push({ x, y, t: performance.now() });
+  if (hist.length > 7) hist.shift();
+});
+addEventListener('pointerup', () => {
+  if (!held) return;
+  const a = hist[0], b = hist[hist.length - 1];
+  const dt = Math.max(1, b.t - a.t);
+  const vy = (b.y - a.y) / dt; // px/ms（上向きが負）
+  if (vy < -0.22 * DPR || held.y < RIVER_BOT + 14 * DPR) {
+    launchFrom(held, vy * 14);
+  } else {
+    held.ret = true; // そっと岸へ戻す
+    held.held = false;
+  }
+  held = null;
+});
+
+// ---- 描画ループ ----
+function loop(t) {
+  // 残光を残す暗転
+  cx.fillStyle = 'rgba(8,8,14,0.26)';
+  cx.fillRect(0, 0, W, H);
+
+  // 川の水 — わずかに青い闇を毎フレーム重ねて帯にする
+  cx.fillStyle = 'rgba(16, 24, 44, 0.10)';
+  cx.fillRect(0, RIVER_TOP, W, RIVER_BOT - RIVER_TOP);
+
+  // 流した数だけ川全体が金色を帯びる
+  const goldTint = Math.min(0.045, floating.length * 0.010 + arrived.length * 0.0035);
+  if (goldTint > 0.001) {
+    cx.fillStyle = `rgba(255, 217, 138, ${goldTint})`;
+    cx.fillRect(0, RIVER_TOP, W, RIVER_BOT - RIVER_TOP);
+  }
+
+  // 岸辺の微光
+  for (const s of stars) {
+    cx.globalAlpha = 0.12 + 0.2 * (0.5 + 0.5 * Math.sin(t * s.sp * 3 + s.ph));
+    cx.fillStyle = s.c;
+    cx.beginPath();
+    cx.arc(s.x, s.y, s.r, 0, 7);
+    cx.fill();
+  }
+  cx.globalAlpha = 1;
+
+  // 水際の線（2端末のあわい）
+  const shim = 0.10 + 0.05 * Math.sin(t * 0.0012);
+  for (const yy of [RIVER_TOP, RIVER_BOT]) {
+    const g = cx.createLinearGradient(0, 0, W, 0);
+    g.addColorStop(0, 'rgba(140,232,255,0)');
+    g.addColorStop(0.5, `rgba(140,232,255,${shim})`);
+    g.addColorStop(1, 'rgba(140,232,255,0)');
+    cx.strokeStyle = g;
+    cx.lineWidth = 1 * DPR;
+    cx.beginPath();
+    cx.moveTo(0, yy);
+    cx.lineTo(W, yy);
+    cx.stroke();
+  }
+
+  // 川の流れの筋
+  for (const f of flows) {
+    f.x += f.sp;
+    if (f.x - f.len > W) f.x = -f.len;
+    cx.globalAlpha = f.a * (0.6 + 0.4 * Math.sin(t * 0.0016 + f.ph));
+    cx.strokeStyle = '#8ce8ff';
+    cx.lineWidth = 0.8 * DPR;
+    cx.lineCap = 'round';
+    cx.beginPath();
+    cx.moveTo(f.x - f.len, f.y);
+    cx.lineTo(f.x, f.y + Math.sin(t * 0.002 + f.ph) * 1.5 * DPR);
+    cx.stroke();
+  }
+  cx.globalAlpha = 1;
+
+  // 川面の金のきらめき — 流すほど強く
+  const glintGain = Math.min(1, 0.12 + totalSent * 0.09);
+  for (const g of glints) {
+    g.x += g.sp;
+    if (g.x > W + 4 * DPR) g.x = -4 * DPR;
+    const tw = Math.pow(0.5 + 0.5 * Math.sin(t * g.tw * 2 + g.ph), 3);
+    const a = tw * glintGain * 0.8;
+    if (a < 0.015) continue;
+    cx.globalAlpha = a;
+    cx.fillStyle = GOLD;
+    cx.shadowColor = GOLD;
+    cx.shadowBlur = 6 * DPR;
+    cx.beginPath();
+    cx.arc(g.x, g.y, g.r * (0.7 + tw), 0, 7);
+    cx.fill();
+  }
+  cx.globalAlpha = 1;
+  cx.shadowBlur = 0;
+
+  // 波紋
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const r = ripples[i];
+    r.r += 1.3 * DPR;
+    r.a *= 0.94;
+    cx.globalAlpha = r.a;
+    cx.strokeStyle = r.c;
+    cx.shadowColor = r.c;
+    cx.shadowBlur = 8 * DPR;
+    cx.lineWidth = 1 * DPR;
+    cx.beginPath();
+    cx.ellipse(r.x, r.y, r.r * 2.1, r.r * 0.55, 0, 0, 7);
+    cx.stroke();
+    cx.shadowBlur = 0;
+    if (r.a < 0.03) ripples.splice(i, 1);
+  }
+  cx.globalAlpha = 1;
+
+  // 火の粉
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i];
+    s.x += s.vx; s.y += s.vy;
+    s.vy *= 0.985; s.vx *= 0.97;
+    s.a *= 0.955;
+    cx.globalAlpha = s.a;
+    cx.fillStyle = s.c;
+    cx.shadowColor = s.c;
+    cx.shadowBlur = 8 * DPR;
+    cx.beginPath();
+    cx.arc(s.x, s.y, s.r, 0, 7);
+    cx.fill();
+    if (s.a < 0.04) sparks.splice(i, 1);
+  }
+  cx.globalAlpha = 1;
+  cx.shadowBlur = 0;
+
+  // とおくの岸に並ぶ灯籠
+  for (let i = arrived.length - 1; i >= 0; i--) {
+    const a = arrived[i];
+    let al = 0.9;
+    if (a.dying) {
+      al *= Math.max(0, 1 - (t - a.dying) / 2400);
+      if (al <= 0) { arrived.splice(i, 1); continue; }
+    }
+    const bob = Math.sin(t * 0.0014 + a.ph) * 0.8 * DPR;
+    drawReflection(a.x, RIVER_TOP + 2 * DPR, 7 * DPR, t, a.ph, al * 0.5);
+    drawLantern(a.x, a.y + bob, 8.5 * DPR, true, t, a.ph, al);
+  }
+
+  // 川を渡る灯籠
+  for (let i = floating.length - 1; i >= 0; i--) {
+    const f = floating[i];
+    f.vy += (-0.34 * DPR - f.vy) * 0.022;
+    f.vx += (0.45 * DPR - f.vx) * 0.012;
+    f.x += f.vx + Math.sin(t * 0.0011 + f.ph) * 0.14 * DPR;
+    f.y += f.vy;
+    if (f.x > W + 36 * DPR) f.x = -36 * DPR;
+    if (!f.inWater && f.y < RIVER_BOT) {
+      f.inWater = true;
+      ripples.push({ x: f.x, y: RIVER_BOT, r: 2 * DPR, a: 0.6, c: GOLD });
+    }
+    if (f.y <= FAR_BANK + 5 * DPR) {
+      // 対岸に到着 — 岸辺に並ぶ
+      arrived.push({
+        x: Math.min(Math.max(f.x, 24 * DPR), W - 24 * DPR),
+        y: FAR_BANK + (Math.random() * 8 - 4) * DPR,
+        jit: 0, ph: f.ph
+      });
+      arrived[arrived.length - 1].jit = arrived[arrived.length - 1].y - FAR_BANK;
+      ripples.push({ x: f.x, y: RIVER_TOP, r: 2 * DPR, a: 0.5, c: GOLD });
+      if (arrived.length > 34 && !arrived[0].dying) arrived[0].dying = t;
+      floating.splice(i, 1);
+      continue;
+    }
+    const u = Math.min(1, Math.max(0, (f.y - RIVER_TOP) / (RIVER_BOT - RIVER_TOP)));
+    const size = (8 + 8.5 * u) * DPR;
+    const bob = f.inWater ? Math.sin(t * 0.0024 + f.ph) * 1.6 * DPR : 0;
+    if (f.inWater) drawReflection(f.x, f.y + size * 0.7, size, t, f.ph, 0.55 + 0.3 * u);
+    drawLantern(f.x, f.y + bob, size, true, t, f.ph, 1);
+  }
+
+  // あなたの岸の灯籠
+  for (const s of slots) {
+    s.alpha += (1 - s.alpha) * 0.025;
+    if (s.ret) {
+      s.x += (s.hx - s.x) * 0.12;
+      s.y += (s.hy - s.y) * 0.12;
+      if (Math.hypot(s.hx - s.x, s.hy - s.y) < 1 * DPR) s.ret = false;
+    }
+    const bob = s.lit ? Math.sin(t * 0.002 + s.ph) * 1.2 * DPR : 0;
+    drawLantern(s.x, s.y + bob, 14 * DPR, s.lit, t, s.ph, s.alpha);
+    // 灯った灯籠の足もとに、待つ光だまり
+    if (s.lit && !s.held) {
+      cx.globalAlpha = s.alpha * (0.08 + 0.04 * Math.sin(t * 0.003 + s.ph));
+      cx.fillStyle = GOLD;
+      cx.beginPath();
+      cx.ellipse(s.x, s.y + 12 * DPR, 26 * DPR, 7 * DPR, 0, 0, 7);
+      cx.fill();
+      cx.globalAlpha = 1;
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// 最初にお手本をひとつ — 灯をともし、川へ送り出す
+setTimeout(() => {
+  const s = slots[2];
+  if (s && !s.lit) { s.lit = true; ignite(s.x, s.y); }
+}, 1100);
+setTimeout(() => {
+  const s = slots[2];
+  if (s && s.lit && !s.held) launchFrom(s, -2.4 * DPR);
+}, 2500);
+</script>
+</body>
+</html>

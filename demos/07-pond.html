@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>07 音紋の池</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="手を叩くと暗い水面に波紋がひろがり、光の魚が生まれる。音を重ねるほど池が満ちていく。">
+<meta property="og:title" content="07 音紋の池 — hikari">
+<meta property="og:description" content="手を叩くと暗い水面に波紋がひろがり、光の魚が生まれる。音を重ねるほど池が満ちていく。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+<style>
+  #mic-btn { position: fixed; top: 26px; right: 26px; z-index: 12; }
+</style>
+</head>
+<body data-screen-label="07 音紋の池">
+
+<canvas id="cv" class="stage"></canvas>
+<button class="action-btn" id="mic-btn">🎙 音で遊ぶ</button>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 07</div>
+    <div class="hud-title">音紋の池</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">手を叩く・声を出すと、暗い水面に波紋がひろがり光の魚が生まれます。<br>高い音は澄んだ色、低い音は温かい色に。水面にふれても波紋が打てます。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas + Web Audio</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">Max/MSP + TouchDesigner</span></div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+let W, H, DPR = Math.min(devicePixelRatio, 2);
+function resize() { W = cv.width = innerWidth*DPR; H = cv.height = innerHeight*DPR; }
+resize();
+addEventListener('resize', resize);
+
+// 低音→温かい色 / 高音→澄んだ色
+const PALETTE = ['#ffb070', '#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#b8ffc2'];
+
+let ripples = [], fish = [];
+
+function splash(x, y, power, hue01) {
+  const c = PALETTE[Math.min(PALETTE.length-1, Math.floor(hue01 * PALETTE.length))];
+  for (let i=0; i<3; i++) {
+    ripples.push({ x, y, r: 4*DPR, sp: (1.6+i*0.7+power*2)*DPR, a: 0.8 - i*0.18, c });
+  }
+  // 魚が生まれる
+  const n = 1 + Math.floor(power*3);
+  for (let i=0; i<n && fish.length<46; i++) {
+    const a = Math.random()*Math.PI*2;
+    fish.push({
+      x, y, heading: a,
+      speed: (1.2 + Math.random()*1.6)*DPR,
+      c, ph: Math.random()*7,
+      tail: [], born: performance.now(),
+      sz: (4+Math.random()*4)*DPR
+    });
+  }
+}
+
+addEventListener('pointerdown', e => splash(e.clientX*DPR, e.clientY*DPR, 0.6, Math.random()));
+
+// ---- マイク：拍手検出 ----
+let analyser = null, tdata = null, fdata = null, avg = 0.02, cooldown = 0;
+document.getElementById('mic-btn').addEventListener('click', async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ac.createMediaStreamSource(stream);
+    analyser = ac.createAnalyser();
+    analyser.fftSize = 1024;
+    tdata = new Uint8Array(analyser.fftSize);
+    fdata = new Uint8Array(analyser.frequencyBinCount);
+    src.connect(analyser);
+    document.getElementById('mic-btn').style.display = 'none';
+  } catch (e) {
+    document.getElementById('mic-btn').textContent = 'マイク不可 — ふれて遊んでね';
+  }
+});
+
+function listen() {
+  if (!analyser) return;
+  analyser.getByteTimeDomainData(tdata);
+  let rms = 0;
+  for (let i=0; i<tdata.length; i+=4) { const v = (tdata[i]-128)/128; rms += v*v; }
+  rms = Math.sqrt(rms / (tdata.length/4));
+  if (cooldown > 0) cooldown--;
+  if (rms > avg*3 + 0.05 && cooldown === 0) {
+    // 音の高さ→色
+    analyser.getByteFrequencyData(fdata);
+    let top = 0, topI = 0;
+    for (let i=2; i<fdata.length*0.6; i++) if (fdata[i] > top) { top = fdata[i]; topI = i; }
+    const hue01 = Math.min(1, topI / (fdata.length*0.35));
+    splash(
+      W*0.15 + Math.random()*W*0.7,
+      H*0.2 + Math.random()*H*0.6,
+      Math.min(1, rms*3), hue01
+    );
+    cooldown = 14;
+  }
+  avg = avg*0.97 + rms*0.03;
+}
+
+// ---- 魚 ----
+function angleTo(from, to) {
+  let d = to-from;
+  while (d > Math.PI) d -= Math.PI*2;
+  while (d < -Math.PI) d += Math.PI*2;
+  return d;
+}
+function stepFish(f, t) {
+  f.heading += Math.sin(t*0.002 + f.ph*4)*0.06;
+  const m = 60*DPR;
+  if (f.x < m) f.heading += angleTo(f.heading, 0)*0.1;
+  if (f.x > W-m) f.heading += angleTo(f.heading, Math.PI)*0.1;
+  if (f.y < m) f.heading += angleTo(f.heading, Math.PI/2)*0.1;
+  if (f.y > H-m) f.heading += angleTo(f.heading, -Math.PI/2)*0.1;
+  f.x += Math.cos(f.heading)*f.speed;
+  f.y += Math.sin(f.heading)*f.speed;
+  f.tail.unshift({x: f.x, y: f.y});
+  if (f.tail.length > 22) f.tail.pop();
+}
+function drawFish(f, t) {
+  const fade = Math.min(1, (performance.now()-f.born)/600);
+  // 尾の光跡
+  cx.lineCap = 'round';
+  for (let i=1; i<f.tail.length; i++) {
+    const a = (1 - i/f.tail.length) * 0.5 * fade;
+    cx.strokeStyle = f.c;
+    cx.globalAlpha = a;
+    cx.lineWidth = (1-i/f.tail.length) * f.sz * 1.4;
+    cx.beginPath();
+    cx.moveTo(f.tail[i-1].x, f.tail[i-1].y);
+    cx.lineTo(f.tail[i].x, f.tail[i].y);
+    cx.stroke();
+  }
+  // 体
+  cx.globalAlpha = fade;
+  cx.save();
+  cx.translate(f.x, f.y);
+  cx.rotate(f.heading);
+  cx.shadowColor = f.c;
+  cx.shadowBlur = 14*DPR;
+  cx.fillStyle = f.c;
+  cx.beginPath();
+  cx.ellipse(0, 0, f.sz*1.5, f.sz*0.75, 0, 0, 7);
+  cx.fill();
+  const wag = Math.sin(t*0.02 + f.ph)*f.sz*0.7;
+  cx.beginPath();
+  cx.moveTo(-f.sz*1.2, 0);
+  cx.lineTo(-f.sz*2.4, wag - f.sz*0.5);
+  cx.lineTo(-f.sz*2.4, wag + f.sz*0.5);
+  cx.closePath();
+  cx.fill();
+  cx.shadowBlur = 0;
+  cx.fillStyle = '#0a0a0f';
+  cx.beginPath(); cx.arc(f.sz*0.8, -f.sz*0.18, f.sz*0.18, 0, 7); cx.fill();
+  cx.restore();
+  cx.globalAlpha = 1;
+}
+
+// ---- ループ ----
+function loop(t) {
+  listen();
+  cx.fillStyle = 'rgba(6,8,14,0.18)';
+  cx.fillRect(0,0,W,H);
+
+  // 水面のゆらめき（淡い横線）
+  cx.globalAlpha = 0.05;
+  cx.strokeStyle = '#8ce8ff';
+  cx.lineWidth = 1*DPR;
+  for (let i=0; i<5; i++) {
+    const y = ((t*0.01 + i*H/5) % H);
+    cx.beginPath();
+    for (let x=0; x<=W; x+=40*DPR) {
+      const yy = y + Math.sin(x*0.008/DPR + t*0.001 + i)*6*DPR;
+      x === 0 ? cx.moveTo(x, yy) : cx.lineTo(x, yy);
+    }
+    cx.stroke();
+  }
+  cx.globalAlpha = 1;
+
+  // 波紋
+  ripples = ripples.filter(r => r.a > 0.01);
+  for (const r of ripples) {
+    r.r += r.sp;
+    r.sp *= 0.985;
+    r.a *= 0.974;
+    cx.strokeStyle = r.c;
+    cx.globalAlpha = r.a;
+    cx.lineWidth = 2*DPR;
+    cx.shadowColor = r.c;
+    cx.shadowBlur = 10*DPR;
+    cx.beginPath();
+    cx.arc(r.x, r.y, r.r, 0, 7);
+    cx.stroke();
+    cx.shadowBlur = 0;
+  }
+  cx.globalAlpha = 1;
+
+  for (const f of fish) { stepFish(f, t); drawFish(f, t); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

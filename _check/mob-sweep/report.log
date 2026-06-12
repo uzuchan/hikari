@@ -1,0 +1,1038 @@
+===== MOBILE SWEEP SUMMARY (390x844) =====
+02 02-library: err0 | ok | hint:130.4px | tech:ok
+03 03-breath: err0 | ok | hint:138.7px | tech:ok
+04 04-spirit: err0 | ok | hint:138.6px | tech:ok
+05 05-mirror: err0 | ok | hint:63.4px(NARROW) | tech:ok
+06 06-rain: err0 | ok | hint:115.5px | tech:ok
+07 07-pond: err0 | ok | hint:120.1px | tech:ok
+08 08-sand: err0 | ok | hint:114.9px | tech:ok
+09 09-constellation: err0 | ok | hint:93.5px(NARROW) | tech:ok
+10 10-fireworks: err0 | ok | hint:74.7px(NARROW) | tech:ok
+11 11-corridor: err0 | ok | hint:130.4px | tech:ok
+12 12-nebula: err0 | ok | hint:120.1px | tech:ok
+13 13-ito-koto: err0 | ok | hint:138.6px | tech:ok
+14 14-tomoshibi: err0 | ok | hint:115.5px | tech:ok
+15 15-wataridori: err0 | ok | hint:105.6px | tech:ok
+16 16-kurage: err0 | ok | hint:130.4px | tech:ok
+17 17-mizukagami: err0 | ok | hint:138.6px | tech:ok
+18 18-tourou: err0 | ok | hint:123.5px | tech:ok
+
+===== FULL JSON =====
+[
+ {
+  "nn": "02",
+  "slug": "02-library",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 678.8,
+    "w": 130.4,
+    "h": 145.2,
+    "right": 156.4,
+    "bottom": 824
+   },
+   "hintText": "WASD歩く ／ ドラッグで見回す ／\n    Space浮かぶ・⇧Shift降りる ／ クリックで妖精が集まる",
+   "hintNarrow": false,
+   "tech": {
+    "x": 172.4,
+    "y": 749,
+    "w": 191.6,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 149,
+    "h": 37,
+    "right": 175,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/02.png"
+ },
+ {
+  "nn": "03",
+  "slug": "03-breath",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 683.7,
+    "w": 138.7,
+    "h": 140.3,
+    "right": 164.7,
+    "bottom": 824
+   },
+   "hintText": "マイクに息を吹きかけると、花びらが光になって舞います。マイクがなければ、画面を素早くなでても風になります。",
+   "hintNarrow": false,
+   "tech": {
+    "x": 180.7,
+    "y": 749,
+    "w": 183.3,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 237.1,
+    "h": 37,
+    "right": 263.1,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [
+    {
+     "el": "button#mic.action-btn",
+     "text": "🎙 マイクで吹く",
+     "box": {
+      "x": 204.8,
+      "y": 26,
+      "w": 159.3,
+      "h": 43,
+      "right": 364,
+      "bottom": 69
+     },
+     "visible": true,
+     "hit": true,
+     "tooSmall": false
+    }
+   ],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/03.png"
+ },
+ {
+  "nn": "04",
+  "slug": "04-spirit",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 660.3,
+    "w": 138.6,
+    "h": 163.7,
+    "right": 164.6,
+    "bottom": 824
+   },
+   "hintText": "一筆書きで線を描いて、指を離すと——その線が生き物になって泳ぎ出します。速く描くとせっかちに、ゆっくり描くとおだやかに。",
+   "hintNarrow": false,
+   "tech": {
+    "x": 180.6,
+    "y": 749,
+    "w": 183.4,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 207.5,
+    "h": 37,
+    "right": 233.5,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/04.png"
+ },
+ {
+  "nn": "05",
+  "slug": "05-mirror",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 449.8,
+    "w": 63.4,
+    "h": 374.3,
+    "right": 89.4,
+    "bottom": 824
+   },
+   "hintText": "カメラの前でゆっくり動くと光の蝶が集まり、素早く動くと驚いて散ります。カメラがなければ、マウスの動きに群れが反応します。",
+   "hintNarrow": true,
+   "tech": {
+    "x": 105.4,
+    "y": 749,
+    "w": 258.6,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 177.8,
+    "h": 37,
+    "right": 203.8,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [
+    {
+     "el": "button#cam-btn.action-btn",
+     "text": "📷 カメラで踊る",
+     "box": {
+      "x": 204.8,
+      "y": 26,
+      "w": 159.3,
+      "h": 43,
+      "right": 364,
+      "bottom": 69
+     },
+     "visible": true,
+     "hit": true,
+     "tooSmall": false
+    }
+   ],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/05.png"
+ },
+ {
+  "nn": "06",
+  "slug": "06-rain",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 636.9,
+    "w": 115.5,
+    "h": 187.1,
+    "right": 141.5,
+    "bottom": 824
+   },
+   "hintText": "降ってくる文字に触れると、言葉が「その意味する風景」に変わります。雪は結晶に、火は火の粉に、蝶は羽ばたきに。",
+   "hintNarrow": false,
+   "tech": {
+    "x": 157.5,
+    "y": 749,
+    "w": 206.5,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 149.3,
+    "h": 37,
+    "right": 175.3,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/06.png"
+ },
+ {
+  "nn": "07",
+  "slug": "07-pond",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 590.1,
+    "w": 120.1,
+    "h": 233.9,
+    "right": 146.1,
+    "bottom": 824
+   },
+   "hintText": "手を叩く・声を出すと、暗い水面に波紋がひろがり光の魚が生まれます。高い音は澄んだ色、低い音は温かい色に。クリックでも波紋",
+   "hintNarrow": false,
+   "tech": {
+    "x": 162.1,
+    "y": 749,
+    "w": 201.9,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 149.4,
+    "h": 37,
+    "right": 175.4,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [
+    {
+     "el": "button#mic-btn.action-btn",
+     "text": "🎙 音で遊ぶ",
+     "box": {
+      "x": 234.7,
+      "y": 26,
+      "w": 129.3,
+      "h": 43,
+      "right": 364,
+      "bottom": 69
+     },
+     "visible": true,
+     "hit": true,
+     "tooSmall": false
+    }
+   ],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/07.png"
+ },
+ {
+  "nn": "08",
+  "slug": "08-sand",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 590.1,
+    "w": 114.9,
+    "h": 233.9,
+    "right": 140.9,
+    "bottom": 824
+   },
+   "hintText": "指でなぞると、光る砂紋が描かれます。紋様が交差した場所からは光の虫が生まれます。手を止めると、風が少しずつ紋様を消してい",
+   "hintNarrow": false,
+   "tech": {
+    "x": 156.9,
+    "y": 749,
+    "w": 207.1,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 149.3,
+    "h": 37,
+    "right": 175.3,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/08.png"
+ },
+ {
+  "nn": "09",
+  "slug": "09-constellation",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 566.7,
+    "w": 93.5,
+    "h": 257.3,
+    "right": 119.5,
+    "bottom": 824
+   },
+   "hintText": "星をつぎつぎにタップして繋ぐと星座になります。3つ以上繋いでダブルクリック——星座から獣が生まれ、夜空を駆けていきます。",
+   "hintNarrow": true,
+   "tech": {
+    "x": 135.5,
+    "y": 749,
+    "w": 228.5,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 177.8,
+    "h": 37,
+    "right": 203.8,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/09.png"
+ },
+ {
+  "nn": "10",
+  "slug": "10-fireworks",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 449.8,
+    "w": 74.7,
+    "h": 374.3,
+    "right": 100.7,
+    "bottom": 824
+   },
+   "hintText": "下から上へスワイプすると、光の種が打ち上がって花火が咲きます。残光が地面に落ちて、花畑として積もっていきます。速くスワイ",
+   "hintNarrow": true,
+   "tech": {
+    "x": 116.7,
+    "y": 749,
+    "w": 247.3,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 177.8,
+    "h": 37,
+    "right": 203.8,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/10.png"
+ },
+ {
+  "nn": "11",
+  "slug": "11-corridor",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 707,
+    "w": 130.4,
+    "h": 117,
+    "right": 156.4,
+    "bottom": 824
+   },
+   "hintText": "マウス／指の位置で視線が揺れる ／ クリック・タップ長押しで加速 — 光が尾を引く",
+   "hintNarrow": false,
+   "tech": {
+    "x": 172.4,
+    "y": 749,
+    "w": 191.6,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 148.2,
+    "h": 37,
+    "right": 174.2,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/11.png"
+ },
+ {
+  "nn": "12",
+  "slug": "12-nebula",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 590.1,
+    "w": 120.1,
+    "h": 233.9,
+    "right": 146.1,
+    "bottom": 824
+   },
+   "hintText": "声の大きさで星雲がふくらみ、声の高さで色が移ろいます。沈黙すると、ゆっくり凝縮して眠ります。マイクがなければ、画面をなで",
+   "hintNarrow": false,
+   "tech": {
+    "x": 162.1,
+    "y": 749,
+    "w": 201.9,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 148.5,
+    "h": 37,
+    "right": 174.5,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [
+    {
+     "el": "button#mic.action-btn",
+     "text": "🎙 声をきかせる",
+     "box": {
+      "x": 204.8,
+      "y": 26,
+      "w": 159.3,
+      "h": 43,
+      "right": 364,
+      "bottom": 69
+     },
+     "visible": true,
+     "hit": true,
+     "tooSmall": false
+    }
+   ],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/12.png"
+ },
+ {
+  "nn": "13",
+  "slug": "13-ito-koto",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 590.1,
+    "w": 138.6,
+    "h": 233.9,
+    "right": 164.6,
+    "bottom": 824
+   },
+   "hintText": "ドラッグして2点のあいだに光の糸を張る。張った糸を横切るようになぞると、弦が震えて小さく鳴る。長い糸は低く、短い糸は高く",
+   "hintNarrow": false,
+   "tech": {
+    "x": 180.6,
+    "y": 743,
+    "w": 183.4,
+    "h": 81,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 148.7,
+    "h": 37,
+    "right": 174.7,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/13.png"
+ },
+ {
+  "nn": "14",
+  "slug": "14-tomoshibi",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 543.3,
+    "w": 115.5,
+    "h": 280.7,
+    "right": 141.5,
+    "bottom": 824
+   },
+   "hintText": "暗い街並みにふれると、窓明かりがひとつずつ灯ります。灯りが増えると人影が行き交い、空に星が増える。しばらく放っておくと、",
+   "hintNarrow": false,
+   "tech": {
+    "x": 157.5,
+    "y": 749,
+    "w": 206.5,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 207.5,
+    "h": 37,
+    "right": 233.5,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/14.png"
+ },
+ {
+  "nn": "15",
+  "slug": "15-wataridori",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 613.5,
+    "w": 105.6,
+    "h": 210.5,
+    "right": 131.6,
+    "bottom": 824
+   },
+   "hintText": "左の「あなたの空」で指を走らせると、軌跡から光の渡り鳥が生まれます。群れは境界を越えて、とおくの空で星座の手紙になります",
+   "hintNarrow": false,
+   "tech": {
+    "x": 147.6,
+    "y": 758,
+    "w": 216.4,
+    "h": 66,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 177.8,
+    "h": 37,
+    "right": 203.8,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/15.png"
+ },
+ {
+  "nn": "16",
+  "slug": "16-kurage",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 707,
+    "w": 130.4,
+    "h": 117,
+    "right": 156.4,
+    "bottom": 824
+   },
+   "hintText": "ドラッグで海底から見回す ／ クラゲをタップすると光が脈打ち、群れへ連鎖する",
+   "hintNarrow": false,
+   "tech": {
+    "x": 172.4,
+    "y": 749,
+    "w": 191.6,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 177.8,
+    "h": 37,
+    "right": 203.8,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/16.png"
+ },
+ {
+  "nn": "17",
+  "slug": "17-mizukagami",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 613.5,
+    "w": 138.6,
+    "h": 210.5,
+    "right": 164.6,
+    "bottom": 824
+   },
+   "hintText": "上半分の夜の空気に、指で光の文字を描いてください。水面が鏡像を揺らめかせて返します。描き終えた線は光の粒にほどけて水に落",
+   "hintNarrow": false,
+   "tech": {
+    "x": 180.6,
+    "y": 749,
+    "w": 183.4,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 149,
+    "h": 37,
+    "right": 175,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/17.png"
+ },
+ {
+  "nn": "18",
+  "slug": "18-tourou",
+  "navNote": "",
+  "errors": [],
+  "interactErrors": [],
+  "netFails": [],
+  "metrics": {
+   "cw": 390,
+   "ch": 844,
+   "scrollWidth": 390,
+   "bodyScrollWidth": 390,
+   "hOverflow": false,
+   "hint": {
+    "x": 26,
+    "y": 590.1,
+    "w": 123.5,
+    "h": 233.9,
+    "right": 149.5,
+    "bottom": 824
+   },
+   "hintText": "下の岸の灯籠にふれると灯がともります。もう一度つかんで、川へすっと送り出してください。灯籠は光の帯を曳いて川を渡り、とお",
+   "hintNarrow": false,
+   "tech": {
+    "x": 165.5,
+    "y": 749,
+    "w": 198.5,
+    "h": 75,
+    "right": 364,
+    "bottom": 824
+   },
+   "techOverR": false,
+   "hudTop": {
+    "x": 0,
+    "y": 0,
+    "w": 390,
+    "h": 136,
+    "right": 390,
+    "bottom": 136
+   },
+   "hudTitle": {
+    "x": 26,
+    "y": 77,
+    "w": 177.8,
+    "h": 37,
+    "right": 203.8,
+    "bottom": 114
+   },
+   "offscreen": [],
+   "overlaps": [],
+   "buttons": [],
+   "fixedWidthSuspects": [],
+   "offenders": []
+  },
+  "shot": "_check/mob-sweep/18.png"
+ }
+]

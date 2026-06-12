@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>04 一筆書きの精霊</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="指で描いた一筆書きの線が、そのまま生き物になって泳ぎ出す。線の速さと曲がりで性格が変わる。">
+<meta property="og:title" content="04 一筆書きの精霊 — hikari">
+<meta property="og:description" content="指で描いた一筆書きの線が、そのまま生き物になって泳ぎ出す。線の速さと曲がりで性格が変わる。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+</head>
+<body data-screen-label="04 一筆書きの精霊">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 04</div>
+    <div class="hud-title">一筆書きの精霊</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">一筆書きで線を描いて、指を離すと——その線が生き物になって泳ぎ出します。<br>速く描くとせっかちに、ゆっくり描くとおだやかに。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas 2D</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">openFrameworks (C++)</span></div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+let W, H, DPR = Math.min(devicePixelRatio, 2);
+function resize() { W = cv.width = innerWidth*DPR; H = cv.height = innerHeight*DPR; }
+resize();
+addEventListener('resize', resize);
+
+const PALETTE = ['#8ce8ff', '#ffd98a', '#ffaad4', '#c9a8ff'];
+let spirits = [];
+let stroke = null;
+
+// ---- 入力 ----
+function pos(e) { return { x: e.clientX*DPR, y: e.clientY*DPR, t: performance.now() }; }
+addEventListener('pointerdown', e => { stroke = [pos(e)]; });
+addEventListener('pointermove', e => {
+  if (!stroke) return;
+  const p = pos(e), q = stroke[stroke.length-1];
+  if (Math.hypot(p.x-q.x, p.y-q.y) > 3*DPR) stroke.push(p);
+});
+addEventListener('pointerup', () => {
+  if (stroke && stroke.length > 6) birth(stroke);
+  stroke = null;
+});
+
+// ---- 線 → 精霊 ----
+function resample(pts, step) {
+  const out = [pts[0]];
+  let acc = 0;
+  for (let i=1; i<pts.length; i++) {
+    let a = pts[i-1], b = pts[i];
+    let d = Math.hypot(b.x-a.x, b.y-a.y);
+    while (acc + d >= step) {
+      const r = (step - acc) / d;
+      const nx = a.x + (b.x-a.x)*r, ny = a.y + (b.y-a.y)*r;
+      out.push({x:nx, y:ny});
+      a = {x:nx, y:ny};
+      d = Math.hypot(b.x-a.x, b.y-a.y);
+      acc = 0;
+    }
+    acc += d;
+  }
+  return out;
+}
+
+function birth(raw) {
+  // 描いた速さ・曲がり具合 → 性格
+  let len = 0, turn = 0;
+  for (let i=1; i<raw.length; i++) {
+    len += Math.hypot(raw[i].x-raw[i-1].x, raw[i].y-raw[i-1].y);
+    if (i > 1) {
+      const a1 = Math.atan2(raw[i-1].y-raw[i-2].y, raw[i-1].x-raw[i-2].x);
+      const a2 = Math.atan2(raw[i].y-raw[i-1].y, raw[i].x-raw[i-1].x);
+      let d = a2-a1;
+      while (d > Math.PI) d -= Math.PI*2;
+      while (d < -Math.PI) d += Math.PI*2;
+      turn += Math.abs(d);
+    }
+  }
+  const dur = (raw[raw.length-1].t - raw[0].t) / 1000;
+  const drawSpeed = len / Math.max(dur, 0.1) / DPR;   // px/s
+  const seg = Math.max(7*DPR, Math.min(16*DPR, len / 40));
+  const body = resample(raw, seg);
+  if (body.length < 5) return;
+
+  const speedNorm = Math.min(1, drawSpeed / 1600);
+  spirits.push({
+    pts: body.map(p => ({...p})),
+    seg,
+    heading: Math.atan2(body[0].y-body[1].y, body[0].x-body[1].x),
+    speed: (1.6 + speedNorm*3.4) * DPR,
+    wiggle: 0.25 + Math.min(1, turn/8) * 0.8,
+    color: PALETTE[Math.floor(speedNorm * (PALETTE.length-1) + Math.random()*0.99) % PALETTE.length],
+    ph: Math.random()*7,
+    noiseSeed: Math.random()*100,
+    born: performance.now()
+  });
+  if (spirits.length > 12) spirits.shift();
+}
+
+// ---- 泳ぎ：先頭が舵をとり、体が追従 ----
+function swim(s, t) {
+  const head = s.pts[0];
+  // ゆらぎ操舵
+  s.heading += Math.sin(t*0.001*(1+s.wiggle) + s.ph) * 0.05 * s.wiggle
+             + Math.sin(t*0.00037 + s.noiseSeed) * 0.03;
+  // 画面端を避ける
+  const m = 80*DPR;
+  if (head.x < m) s.heading += angleTo(s.heading, 0) * 0.08;
+  if (head.x > W-m) s.heading += angleTo(s.heading, Math.PI) * 0.08;
+  if (head.y < m) s.heading += angleTo(s.heading, Math.PI/2) * 0.08;
+  if (head.y > H-m) s.heading += angleTo(s.heading, -Math.PI/2) * 0.08;
+
+  head.x += Math.cos(s.heading) * s.speed;
+  head.y += Math.sin(s.heading) * s.speed;
+
+  // 追従（セグメント長を保つ）
+  for (let i=1; i<s.pts.length; i++) {
+    const a = s.pts[i], b = s.pts[i-1];
+    const dx = b.x-a.x, dy = b.y-a.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const pull = (d - s.seg) / d;
+    a.x += dx * pull;
+    a.y += dy * pull;
+    // 体のうねり
+    const side = Math.sin(t*0.004*(1+s.wiggle*0.5) + i*0.55 + s.ph) * s.wiggle * 0.7*DPR;
+    const nx = -dy/d, ny = dx/d;
+    a.x += nx*side; a.y += ny*side;
+  }
+}
+function angleTo(from, to) {
+  let d = to - from;
+  while (d > Math.PI) d -= Math.PI*2;
+  while (d < -Math.PI) d += Math.PI*2;
+  return d;
+}
+
+function drawSpirit(s, t) {
+  const n = s.pts.length;
+  const fade = Math.min(1, (performance.now()-s.born)/800);
+  cx.globalAlpha = fade;
+  // 本体：先細りの光る背骨
+  cx.lineCap = 'round';
+  cx.shadowColor = s.color;
+  for (let pass=0; pass<2; pass++) {
+    cx.shadowBlur = pass === 0 ? 22*DPR : 6*DPR;
+    cx.strokeStyle = pass === 0 ? s.color : '#ffffff';
+    for (let i=1; i<n; i++) {
+      const w = (1 - i/n) * 9*DPR + 1.5*DPR;
+      cx.lineWidth = pass === 0 ? w : w*0.35;
+      cx.beginPath();
+      cx.moveTo(s.pts[i-1].x, s.pts[i-1].y);
+      cx.lineTo(s.pts[i].x, s.pts[i].y);
+      cx.stroke();
+    }
+  }
+  cx.shadowBlur = 0;
+  // ヒレ（数カ所）
+  cx.strokeStyle = s.color;
+  cx.lineWidth = 1.6*DPR;
+  cx.globalAlpha = fade*0.7;
+  for (let i=3; i<n-2; i+=4) {
+    const a = s.pts[i], b = s.pts[i-1];
+    const dx = b.x-a.x, dy = b.y-a.y, d = Math.hypot(dx,dy)||1;
+    const fl = (1-i/n)*14*DPR * (0.7+0.3*Math.sin(t*0.006+i));
+    cx.beginPath();
+    cx.moveTo(a.x, a.y);
+    cx.lineTo(a.x - dy/d*fl, a.y + dx/d*fl);
+    cx.moveTo(a.x, a.y);
+    cx.lineTo(a.x + dy/d*fl, a.y - dx/d*fl);
+    cx.stroke();
+  }
+  // 目
+  const h = s.pts[0];
+  cx.globalAlpha = fade;
+  cx.fillStyle = '#0a0a0f';
+  cx.beginPath();
+  cx.arc(h.x + Math.cos(s.heading+0.5)*4*DPR, h.y + Math.sin(s.heading+0.5)*4*DPR, 2.2*DPR, 0, 7);
+  cx.fill();
+  cx.globalAlpha = 1;
+}
+
+// ---- ループ ----
+function loop(t) {
+  cx.fillStyle = 'rgba(8,8,15,0.22)';
+  cx.fillRect(0,0,W,H);
+
+  // 描き途中の線
+  if (stroke && stroke.length > 1) {
+    cx.strokeStyle = '#f4f2ec';
+    cx.shadowColor = '#f4f2ec';
+    cx.shadowBlur = 16*DPR;
+    cx.lineWidth = 5*DPR;
+    cx.lineCap = cx.lineJoin = 'round';
+    cx.beginPath();
+    cx.moveTo(stroke[0].x, stroke[0].y);
+    for (const p of stroke) cx.lineTo(p.x, p.y);
+    cx.stroke();
+    cx.shadowBlur = 0;
+  }
+
+  for (const s of spirits) { swim(s, t); drawSpirit(s, t); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

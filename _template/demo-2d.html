@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<!--
+  hikari demo template — Canvas 2D
+  使い方: このファイルを demos/NN-slug.html にコピーし、{{...}} を置換して中身を作る。
+  - {{NN}}      … 2桁の通し番号 (例 11)
+  - {{TITLE}}   … 日本語タイトル (例 光の回廊)
+  - {{HINT}}    … 操作のヒント (hud-hint)
+  - {{PROTO}}   … 試作の技術 (例 Canvas 2D + Web Audio)
+  - {{PROD}}    … 本実装の想定 (例 TouchDesigner + 赤外タッチ)
+  そのまま開いても「ポインタに集まる光の粒」が動く。ここから世界を育てる。
+-->
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{NN}} {{TITLE}}</title>
+<link rel="stylesheet" href="../shared.css">
+<style>
+  /* デモ固有のスタイルだけここに。共通は shared.css に置く。 */
+</style>
+</head>
+<body data-screen-label="{{NN}} {{TITLE}}">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE {{NN}}</div>
+    <div class="hud-title">{{TITLE}}</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">{{HINT}}</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">{{PROTO}}</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">{{PROD}}</span></div>
+  </div>
+</div>
+
+<script>
+// ---- 土台: DPR対応キャンバス & ループ ----
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+const DPR = Math.min(devicePixelRatio, 2);
+let W, H;
+
+const PALETTE = ['#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
+
+let motes = [];
+function resize() {
+  W = cv.width = innerWidth * DPR;
+  H = cv.height = innerHeight * DPR;
+  motes = Array.from({ length: 140 }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    vx: 0, vy: 0,
+    r: (0.6 + Math.random() * 1.6) * DPR,
+    c: PALETTE[Math.floor(Math.random() * PALETTE.length)],
+    ph: Math.random() * 7
+  }));
+}
+resize();
+addEventListener('resize', resize);
+
+// ---- 入力: ポインタ（マウス & タッチ共通） ----
+const pointer = { x: -9999, y: -9999, down: false };
+function setP(e) {
+  const p = e.touches ? e.touches[0] : e;
+  pointer.x = p.clientX * DPR;
+  pointer.y = p.clientY * DPR;
+}
+addEventListener('pointerdown', e => { pointer.down = true; setP(e); });
+addEventListener('pointermove', setP);
+addEventListener('pointerup', () => pointer.down = false);
+
+// ---- 描画ループ ----
+function loop(t) {
+  // 残光を残す暗転（軌跡が尾を引く）
+  cx.fillStyle = 'rgba(8,8,14,0.22)';
+  cx.fillRect(0, 0, W, H);
+
+  for (const m of motes) {
+    // ポインタへ弱く引き寄せ、押している間は強く
+    const dx = pointer.x - m.x, dy = pointer.y - m.y;
+    const d2 = dx * dx + dy * dy + 1;
+    const pull = (pointer.down ? 90 : 28) * DPR * DPR / d2;
+    m.vx += dx * pull * 0.0004 + Math.sin(t * 0.001 + m.ph) * 0.05 * DPR;
+    m.vy += dy * pull * 0.0004 + Math.cos(t * 0.0013 + m.ph) * 0.05 * DPR;
+    m.vx *= 0.94; m.vy *= 0.94;
+    m.x += m.vx; m.y += m.vy;
+    if (m.x < 0) m.x += W; if (m.x > W) m.x -= W;
+    if (m.y < 0) m.y += H; if (m.y > H) m.y -= H;
+
+    const a = 0.5 + 0.5 * Math.sin(t * 0.003 + m.ph);
+    cx.beginPath();
+    cx.arc(m.x, m.y, m.r, 0, 7);
+    cx.fillStyle = m.c;
+    cx.shadowColor = m.c;
+    cx.shadowBlur = 12 * DPR;
+    cx.globalAlpha = 0.5 + 0.5 * a;
+    cx.fill();
+  }
+  cx.globalAlpha = 1;
+  cx.shadowBlur = 0;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

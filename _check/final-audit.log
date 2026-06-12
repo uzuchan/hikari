@@ -1,0 +1,29 @@
+[A4] smoke-all.mjs exit=0 :: 24 24-shabon: OK 25 25-michishio: OK 
+[A4] mobile-sweep.mjs exit=0 ::   "errors": [],   "errors": [], 
+[A4] meta-audit.mjs exit=0 :: OK  /demos/25-michishio.html  (errors:0, meta:ok, assets:200) 26 pages audited — 0 failed, total console/page errors: 0 
+[A4] DONE
+[B4] gesture-all.mjs exit=0 :: 25: NO_ERRORS 19: NO_ERRORS 
+[B4] DONE
+[C4] niwa-flow.mjs exit=0 :: NO_ERRORS n1/n2/n3 saved 
+[C4] niwa-touch-test.mjs exit=0 :: PASS  C9 タッチターゲット(ui/seeds所有: mini≥40, swatch≥24, けす≥30)  -- all ok RESULT: 30/30 pass, errors=0 
+[C4] garden-letter-test.mjs exit=0 :: ALL PASS 
+[C4] photo-test.mjs exit=0 :: NO_ERRORS 
+[C4] footprints-test.mjs exit=0 :: NO_ERRORS 
+[C4] DONE
+[D4] audio-soundscape-test.mjs exit=0 :: NO_ERRORS n6-soundscape.png saved 
+[D4] seasons-test.mjs exit=0 :: PASS  note: aki の鈴が1回(pitch=0.35, vol=0.15)  -- matched=1 RESULT(soak): 13/13 pass, errors=0 
+[D4] season-audio-test.mjs exit=0 :: NO_ERRORS season-audio.png saved 
+[D4] natsu-check.mjs exit=0 :: PASS  console error / pageerror 0件 RESULT(natsu): 4/4 pass, errors=0 
+[D4] DONE
+[E4] planet-mobile-test.mjs exit=0 ::   PASS  デスクトップ回帰: 左pad-col(360px) + 右worldの2カラム維持  [pad=360px world.left=360 worldH=800] ALL PASS 
+[E4] library-touch-test.mjs exit=0 ::   PASS  console/pageerror 0件 ALL PASS 
+[E4] hint-audit-test.mjs exit=0 ::   PASS  console error 0 (0件) ALL PASS 
+[E4] mobile-gallery-check.mjs exit=0 ::       "errors": [],       "errors": [], 
+[E4] mobile-gallery-scroll.mjs exit=0 :: 
+[E4] echo-cave-test.mjs exit=0 :: PASS  モバイル縦: タッチtapエラーなし・横はみ出しなし  -- errs=0 overflow=false ALL PASS 
+[E4] furiko-test.mjs exit=0 :: PASS  モバイル縦: タップエラーなし・はみ出しなし  -- errs=0 over=false ALL PASS 
+[E4] toudai-test.mjs exit=0 :: PASS  モバイル縦: 指なぞりで光がまわる・はみ出しなし  -- errs=0 over=false mb0=0.706 mb1=2.418 ALL PASS 
+[E4] sukima-test.mjs exit=0 :: PASS  モバイル縦: 指で削れる・はみ出しなし  -- errs=0 over=false dark=0 lit=188 ALL PASS 
+[E4] shabon-test.mjs exit=0 :: PASS  モバイル縦: 長押しの息で生まれる・はみ出しなし  -- errs=0 over=false c=1→2 ALL PASS 
+[E4] michishio-test.mjs exit=0 :: PASS  モバイル縦: 指で月を渡すと潮が入れ替わる・はみ出しなし  -- errs=0 over=false {"a":0.814,"b":0.201}→{"a":0.207,"b":0.6} ALL PASS 
+[E4] DONE

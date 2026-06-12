@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>03 息で咲く光の花野</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="マイクに息を吹きかけると花畑がざわめき、花びらが光の粒になって舞う。静けさの中で再び芽吹く。">
+<meta property="og:title" content="03 息で咲く光の花野 — hikari">
+<meta property="og:description" content="マイクに息を吹きかけると花畑がざわめき、花びらが光の粒になって舞う。静けさの中で再び芽吹く。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+<style>
+  #micbar {
+    position: fixed;
+    top: 26px;
+    right: 26px;
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  #level {
+    width: 90px; height: 4px;
+    border-radius: 99px;
+    background: rgba(244,242,236,0.12);
+    overflow: hidden;
+    display: none;
+  }
+  #level i {
+    display: block; height: 100%;
+    width: 0%;
+    background: var(--glow-cyan);
+    box-shadow: 0 0 10px var(--glow-cyan);
+    transition: width 0.08s;
+  }
+</style>
+</head>
+<body data-screen-label="03 息で咲く光の花野">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 03</div>
+    <div class="hud-title">息で咲く光の花野</div>
+  </div>
+</div>
+
+<div id="micbar">
+  <div id="level"><i></i></div>
+  <button class="action-btn" id="mic">🎙 マイクで吹く</button>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">マイクに息を吹きかけると、花びらが光になって舞います。<br>マイクがなければ、画面を素早くなでても風になります。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas + Web Audio</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">TouchDesigner + マイク</span></div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+let W, H, DPR = Math.min(devicePixelRatio, 2);
+
+const PALETTE = ['#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
+
+// 花びらスプライト（発光をプリレンダ）
+const petalSprites = {};
+for (const c of PALETTE) {
+  const s = document.createElement('canvas');
+  s.width = s.height = 48;
+  const g = s.getContext('2d');
+  g.translate(24, 24);
+  g.shadowColor = c; g.shadowBlur = 12;
+  g.fillStyle = c;
+  g.beginPath();
+  g.ellipse(0, -7, 5.5, 11, 0, 0, Math.PI*2);
+  g.fill();
+  petalSprites[c] = s;
+}
+
+let flowers = [], particles = [], fireflies = [];
+
+function makeFlowers() {
+  flowers = [];
+  const n = Math.max(18, Math.floor(W / DPR / 46));
+  for (let i = 0; i < n; i++) {
+    const x = (i + 0.5) / n * W + (Math.random()-0.5)*30*DPR;
+    const h = (90 + Math.random()*180) * DPR;
+    const c = PALETTE[Math.floor(Math.random()*PALETTE.length)];
+    const np = 5 + Math.floor(Math.random()*3);
+    flowers.push({
+      x, h, c, np,
+      petals: Array.from({length: np}, () => ({ grow: 0.6 + Math.random()*0.4 })),
+      sway: Math.random()*7,
+      size: (10 + Math.random()*9) * DPR,
+      regrowAt: 0
+    });
+  }
+}
+
+function resize() {
+  W = cv.width = innerWidth * DPR;
+  H = cv.height = innerHeight * DPR;
+  makeFlowers();
+  fireflies = Array.from({length: 40}, () => ({
+    x: Math.random()*W, y: Math.random()*H*0.7,
+    ph: Math.random()*7, sp: 0.2+Math.random()*0.5
+  }));
+}
+resize();
+addEventListener('resize', resize);
+
+// ---- 風の入力 ----
+let wind = 0;          // 0..1
+let windDir = -0.6;    // ラジアン気味の傾き
+let analyser = null, adata = null;
+
+document.getElementById('mic').addEventListener('click', async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ac.createMediaStreamSource(stream);
+    analyser = ac.createAnalyser();
+    analyser.fftSize = 512;
+    adata = new Uint8Array(analyser.frequencyBinCount);
+    src.connect(analyser);
+    document.getElementById('mic').style.display = 'none';
+    document.getElementById('level').style.display = 'block';
+  } catch (e) {
+    document.getElementById('mic').textContent = 'マイク不可 — なでて遊んでね';
+  }
+});
+
+// マウス／タッチのスワイプも風になる
+let lastP = null;
+addEventListener('pointermove', e => {
+  if (lastP) {
+    const dx = e.clientX - lastP.x, dy = e.clientY - lastP.y;
+    const v = Math.hypot(dx, dy);
+    if (v > 14) {
+      wind = Math.min(1, wind + v * 0.004);
+      windDir = Math.atan2(dy, dx);
+    }
+  }
+  lastP = { x: e.clientX, y: e.clientY };
+});
+
+function readMic() {
+  if (!analyser) return;
+  analyser.getByteFrequencyData(adata);
+  // 息＝低域のエネルギー
+  let sum = 0;
+  for (let i = 1; i < 24; i++) sum += adata[i];
+  const lvl = sum / 24 / 255;
+  document.querySelector('#level i').style.width = (lvl*130) + '%';
+  if (lvl > 0.18) {
+    wind = Math.min(1, wind + (lvl-0.15) * 0.35);
+    windDir = -0.5 + Math.sin(performance.now()*0.001)*0.3;
+  }
+}
+
+// ---- 描画 ----
+function drawFlower(f, t) {
+  const swayA = Math.sin(t*0.0012 + f.sway) * 0.06 + wind * Math.cos(windDir) * 0.35;
+  const baseY = H;
+  const topX = f.x + Math.sin(swayA) * f.h * 0.45;
+  const topY = baseY - f.h * Math.cos(swayA*0.5);
+
+  // 茎
+  cx.strokeStyle = 'rgba(140,232,255,0.28)';
+  cx.lineWidth = 2 * DPR;
+  cx.beginPath();
+  cx.moveTo(f.x, baseY);
+  cx.quadraticCurveTo(f.x + (topX-f.x)*0.3, baseY - f.h*0.55, topX, topY);
+  cx.stroke();
+
+  // 花びら
+  const alive = f.petals.filter(p => p.grow > 0.05).length;
+  for (let i = 0; i < f.np; i++) {
+    const p = f.petals[i];
+    if (p.grow <= 0.05) continue;
+    const ang = i / f.np * Math.PI*2 + t*0.0003 + f.sway;
+    const sc = (f.size / 24) * p.grow;
+    cx.save();
+    cx.translate(topX, topY);
+    cx.rotate(ang);
+    cx.globalAlpha = 0.95 * p.grow;
+    cx.drawImage(petalSprites[f.c], -24*sc, -24*sc - 4*sc, 48*sc, 48*sc);
+    cx.restore();
+    // 成長
+    if (wind < 0.12 && p.grow < 1) p.grow += 0.0035;
+    // 風で散る
+    if (wind > 0.25 && Math.random() < wind * 0.035 && p.grow > 0.5) {
+      p.grow = 0;
+      particles.push({
+        x: topX, y: topY, c: f.c,
+        vx: Math.cos(windDir)*(2+Math.random()*5)*DPR + (Math.random()-0.5)*2*DPR,
+        vy: Math.sin(windDir)*(2+Math.random()*4)*DPR - (1+Math.random()*2)*DPR,
+        rot: Math.random()*7, vr: (Math.random()-0.5)*0.25,
+        life: 1, sc: 0.5 + Math.random()*0.5
+      });
+    }
+  }
+  // 中心
+  cx.globalAlpha = 1;
+  cx.fillStyle = '#fffbe8';
+  cx.shadowColor = f.c; cx.shadowBlur = 16*DPR;
+  cx.beginPath();
+  cx.arc(topX, topY, 3.2*DPR * (0.4 + 0.6*alive/f.np), 0, 7);
+  cx.fill();
+  cx.shadowBlur = 0;
+}
+
+function loop(t) {
+  readMic();
+  wind *= 0.965;
+
+  cx.fillStyle = 'rgba(8,8,14,0.36)';
+  cx.fillRect(0, 0, W, H);
+
+  // 蛍
+  for (const ff of fireflies) {
+    ff.x += Math.sin(t*0.0008 + ff.ph)*0.5*DPR + wind*Math.cos(windDir)*3*DPR;
+    ff.y += Math.cos(t*0.0011 + ff.ph)*0.4*DPR;
+    if (ff.x < 0) ff.x += W; if (ff.x > W) ff.x -= W;
+    const a = 0.25 + 0.3*Math.sin(t*0.003*ff.sp + ff.ph);
+    cx.fillStyle = `rgba(244,242,236,${a})`;
+    cx.beginPath(); cx.arc(ff.x, ff.y, 1.6*DPR, 0, 7); cx.fill();
+  }
+
+  for (const f of flowers) drawFlower(f, t);
+
+  // 舞う花びら
+  particles = particles.filter(p => p.life > 0.02 && p.y < H + 50);
+  for (const p of particles) {
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.045*DPR;             // 重力
+    p.vx += Math.cos(windDir)*wind*0.25*DPR;
+    p.vx *= 0.985; p.vy *= 0.985;
+    p.rot += p.vr;
+    p.life *= 0.992;
+    const s = 48 * p.sc * DPR * 0.6;
+    cx.save();
+    cx.translate(p.x, p.y);
+    cx.rotate(p.rot);
+    cx.globalAlpha = p.life;
+    cx.drawImage(petalSprites[p.c], -s/2, -s/2, s, s);
+    cx.restore();
+  }
+  cx.globalAlpha = 1;
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

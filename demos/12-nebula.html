@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>12 声の星雲</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="声の大きさと高さで膨らみ色づく星雲。黙れば静かに眠る。マイクがなくても指の動きが声になる。">
+<meta property="og:title" content="12 声の星雲 — hikari">
+<meta property="og:description" content="声の大きさと高さで膨らみ色づく星雲。黙れば静かに眠る。マイクがなくても指の動きが声になる。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+<style>
+  #micbar {
+    position: fixed;
+    top: 26px;
+    right: 26px;
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  #level {
+    width: 90px; height: 4px;
+    border-radius: 99px;
+    background: rgba(244,242,236,0.12);
+    overflow: hidden;
+    display: none;
+  }
+  #level i {
+    display: block; height: 100%;
+    width: 0%;
+    background: var(--glow-violet);
+    box-shadow: 0 0 10px var(--glow-violet);
+    transition: width 0.08s;
+  }
+</style>
+</head>
+<body data-screen-label="12 声の星雲">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 12</div>
+    <div class="hud-title">声の星雲</div>
+  </div>
+</div>
+
+<div id="micbar">
+  <div id="level"><i></i></div>
+  <button class="action-btn" id="mic">🎙 声をきかせる</button>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">声の大きさで星雲がふくらみ、声の高さで色が移ろいます。沈黙すると、ゆっくり凝縮して眠ります。<br>マイクがなければ、画面をなでる速さが声の代わりになります。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas + Web Audio</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">Max/MSP + TouchDesigner</span></div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+const DPR = Math.min(devicePixelRatio, 2);
+let W, H, CX, CY, BASE;
+
+const PALETTE = ['#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
+
+// ---- パレット間を連続補間するためのRGB表 ----
+function hex2rgb(h) {
+  return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+}
+const PRGB = PALETTE.map(hex2rgb);
+// hue: 0..1 → PALETTE内を滑らかに移ろう色
+function paletteColor(hue) {
+  const t = Math.min(0.9999, Math.max(0, hue)) * (PALETTE.length - 1);
+  const i = Math.floor(t), f = t - i;
+  const a = PRGB[i], b = PRGB[i + 1];
+  return [
+    Math.round(a[0] + (b[0]-a[0]) * f),
+    Math.round(a[1] + (b[1]-a[1]) * f),
+    Math.round(a[2] + (b[2]-a[2]) * f)
+  ];
+}
+
+// ---- グロースプライトをプリレンダ（hue方向に24段階） ----
+const SPRITES = [];
+const NSPR = 24, SPR = 64;
+for (let s = 0; s < NSPR; s++) {
+  const c = document.createElement('canvas');
+  c.width = c.height = SPR;
+  const g = c.getContext('2d');
+  const [r, gg, b] = paletteColor(s / (NSPR - 1));
+  const grad = g.createRadialGradient(SPR/2, SPR/2, 0, SPR/2, SPR/2, SPR/2);
+  grad.addColorStop(0,    `rgba(${r},${gg},${b},0.85)`);
+  grad.addColorStop(0.25, `rgba(${r},${gg},${b},0.32)`);
+  grad.addColorStop(0.6,  `rgba(${r},${gg},${b},0.08)`);
+  grad.addColorStop(1,    `rgba(${r},${gg},${b},0)`);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, SPR, SPR);
+  SPRITES.push(c);
+}
+function spriteFor(hue) {
+  return SPRITES[Math.max(0, Math.min(NSPR - 1, Math.round(hue * (NSPR - 1))))];
+}
+
+// ---- 星雲の粒子 & 遠景の星 ----
+let dust = [], stars = [];
+function resize() {
+  W = cv.width = innerWidth * DPR;
+  H = cv.height = innerHeight * DPR;
+  CX = W / 2; CY = H / 2;
+  BASE = Math.min(W, H) * 0.46;
+  dust = Array.from({ length: 320 }, () => ({
+    ang: Math.random() * Math.PI * 2,           // 中心まわりの角度
+    rad: Math.pow(Math.random(), 1.6),          // 0..1 正規化半径（中心ほど密）
+    spin: (0.0001 + Math.random() * 0.00045) * (Math.random() < 0.5 ? 1 : -1),
+    wob: Math.random() * Math.PI * 2,           // 揺らぎ位相
+    wobAmp: 0.03 + Math.random() * 0.1,
+    size: (7 + Math.random() * 22) * DPR,
+    hueOff: (Math.random() - 0.5) * 0.22,       // 個体差の色ずれ
+    tw: Math.random() * Math.PI * 2             // 明滅位相
+  }));
+  stars = Array.from({ length: 90 }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    r: (0.4 + Math.random() * 0.9) * DPR,
+    ph: Math.random() * Math.PI * 2
+  }));
+}
+resize();
+addEventListener('resize', resize);
+
+// ---- 声の入力（マイク） ----
+let analyser = null, adata = null;
+let rawVol = 0;     // 0..1 生の音量
+let rawHue = 0.5;   // 0..1 周波数の重心
+
+document.getElementById('mic').addEventListener('click', async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ac.createMediaStreamSource(stream);
+    analyser = ac.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.75;
+    adata = new Uint8Array(analyser.frequencyBinCount);
+    src.connect(analyser);
+    document.getElementById('mic').style.display = 'none';
+    document.getElementById('level').style.display = 'block';
+  } catch (e) {
+    document.getElementById('mic').textContent = 'マイク不可 — なでて遊んでね';
+  }
+});
+
+function readMic() {
+  if (!analyser) return;
+  analyser.getByteFrequencyData(adata);
+  // 声の帯域だけ見る（おおよそ 80Hz〜4kHz）
+  const lo = 2, hi = Math.min(adata.length, 96);
+  let sum = 0, wsum = 0;
+  for (let i = lo; i < hi; i++) {
+    sum += adata[i];
+    wsum += adata[i] * i;
+  }
+  const n = hi - lo;
+  const lvl = sum / n / 255;
+  rawVol = Math.min(1, Math.max(0, (lvl - 0.04) * 2.4));
+  if (sum > n * 6) {
+    // 周波数の重心 → 0..1（低い声=0 / 高い声=1）
+    const centroid = wsum / sum;
+    rawHue = Math.min(1, Math.max(0, (centroid - lo) / (hi * 0.55 - lo)));
+  }
+  document.querySelector('#level i').style.width = (rawVol * 100) + '%';
+}
+
+// ---- フォールバック: ポインタの速さが声になる ----
+let lastP = null, lastT = 0;
+addEventListener('pointermove', e => {
+  const now = performance.now();
+  if (lastP && !analyser) {
+    const dt = Math.max(8, now - lastT);
+    const v = Math.hypot(e.clientX - lastP.x, e.clientY - lastP.y) / dt; // px/ms
+    rawVol = Math.min(1, rawVol + v * 0.55);
+    // 画面の上ほど高い声（=寒色側）
+    rawHue += ((1 - e.clientY / innerHeight) - rawHue) * 0.06;
+  }
+  lastP = { x: e.clientX, y: e.clientY };
+  lastT = now;
+});
+addEventListener('pointerdown', e => { lastP = { x: e.clientX, y: e.clientY }; lastT = performance.now(); });
+
+// ---- なめらかに追従する状態 ----
+let vol = 0;      // 膨張・輝きの元
+let hue = 0.5;    // 色相位置
+let sleep = 1;    // 0=覚醒 / 1=眠り（沈黙が続くと増える）
+
+function loop(t) {
+  readMic();
+  if (!analyser) rawVol *= 0.94;       // フォールバック時は自然減衰
+
+  // 平滑化：立ち上がりは速く、沈黙への沈み込みはゆっくり
+  vol += (rawVol - vol) * (rawVol > vol ? 0.12 : 0.022);
+  hue += (rawHue - hue) * 0.04;
+  const target = vol > 0.06 ? 0 : 1;
+  sleep += (target - sleep) * (target > sleep ? 0.006 : 0.05); // 眠りはゆっくり訪れる
+
+  // 残光ループ：声が大きいほど尾が短く（キレよく）
+  cx.globalCompositeOperation = 'source-over';
+  cx.fillStyle = `rgba(8,8,14,${0.16 + vol * 0.1})`;
+  cx.fillRect(0, 0, W, H);
+
+  // 遠景の星
+  for (const s of stars) {
+    const a = 0.18 + 0.18 * Math.sin(t * 0.0012 + s.ph);
+    cx.fillStyle = `rgba(244,242,236,${a})`;
+    cx.beginPath(); cx.arc(s.x, s.y, s.r, 0, 7); cx.fill();
+  }
+
+  // 星雲：覚醒度で半径と輝きが変わる
+  const wake = 1 - sleep;                       // 0..1
+  const breathe = 1 + 0.035 * Math.sin(t * 0.0006);   // 眠りの呼吸
+  const spread = BASE * (0.22 + 0.16 * wake + vol * 0.62) * breathe;
+  const bright = 0.10 + wake * 0.16 + vol * 0.5;
+  const speed = 0.4 + wake * 0.8 + vol * 2.6;
+
+  cx.globalCompositeOperation = 'lighter';
+  for (const d of dust) {
+    d.ang += d.spin * speed * 16.7;
+    const wobble = Math.sin(t * 0.0007 + d.wob) * d.wobAmp;
+    const r = (d.rad + wobble) * spread;
+    const x = CX + Math.cos(d.ang) * r * 1.18;  // 横長の星雲
+    const y = CY + Math.sin(d.ang) * r * 0.82;
+    const tw = 0.6 + 0.4 * Math.sin(t * 0.002 + d.tw);
+    const sz = d.size * (0.55 + wake * 0.45 + vol * 0.9);
+    cx.globalAlpha = bright * tw * (1 - d.rad * 0.45);
+    const sp = spriteFor(hue + d.hueOff);
+    cx.drawImage(sp, x - sz / 2, y - sz / 2, sz, sz);
+  }
+
+  // 核：眠ると小さく点る一粒、声で輝きが膨らむ
+  const coreS = BASE * (0.1 + vol * 0.42 + wake * 0.08);
+  cx.globalAlpha = 0.5 + vol * 0.5;
+  cx.drawImage(spriteFor(hue), CX - coreS / 2, CY - coreS / 2, coreS, coreS);
+  cx.globalAlpha = 0.35 * (0.4 + wake);
+  cx.drawImage(SPRITES[NSPR - 1], CX - coreS * 0.22, CY - coreS * 0.22, coreS * 0.44, coreS * 0.44);
+
+  cx.globalAlpha = 1;
+  cx.globalCompositeOperation = 'source-over';
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

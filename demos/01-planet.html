@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>01 惑星のすみか</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="iPadでお絵描きした生き物が、惑星の住人になって歩き出す。描くほどに惑星が賑わうARゲームの原型。">
+<meta property="og:title" content="01 惑星のすみか — hikari">
+<meta property="og:description" content="iPadでお絵描きした生き物が、惑星の住人になって歩き出す。描くほどに惑星が賑わうARゲームの原型。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+<style>
+  body { display: flex; }
+
+  /* 左：iPad（お絵描き） */
+  .pad-col {
+    width: 360px;
+    min-width: 300px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    padding: 90px 20px 80px;
+    z-index: 5;
+  }
+
+  .ipad {
+    width: min(100%, calc(100vh - 240px));
+    background: #1a1a22;
+    border: 2px solid #3a3a46;
+    border-radius: 26px;
+    padding: 14px;
+    box-shadow: 0 0 60px rgba(140,232,255,0.08), 0 18px 50px rgba(0,0,0,0.6);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .ipad-label {
+    text-align: center;
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: var(--dimmer);
+  }
+
+  #draw {
+    width: 100%;
+    aspect-ratio: 1;
+    background: #0e0e14;
+    border-radius: 14px;
+    touch-action: none;
+    cursor: crosshair;
+    display: block;
+  }
+
+  .pad-tools { display: flex; align-items: center; gap: 8px; }
+
+  .swatch {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    flex: none;
+  }
+  .swatch.on { border-color: #fff; box-shadow: 0 0 12px currentColor; }
+
+  .pad-btn {
+    font-family: var(--sans);
+    font-size: 11.5px;
+    letter-spacing: 0.1em;
+    border-radius: 999px;
+    padding: 7px 14px;
+    cursor: pointer;
+    background: none;
+    border: 1px solid rgba(244,242,236,0.25);
+    color: var(--dim);
+  }
+
+  .pad-btn.send {
+    margin-left: auto;
+    color: #0a0a0f;
+    background: var(--glow-gold);
+    border-color: var(--glow-gold);
+    font-weight: 500;
+    box-shadow: 0 0 18px rgba(255,217,138,0.45);
+  }
+  .pad-btn.send:active { transform: scale(0.95); }
+
+  /* 右：惑星 */
+  .world { position: relative; flex: 1; }
+  #planet { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+  .pop {
+    position: fixed;
+    font-family: var(--serif);
+    font-size: 13px;
+    letter-spacing: 0.2em;
+    color: var(--glow-gold);
+    pointer-events: none;
+    animation: popUp 1.6s ease-out forwards;
+    z-index: 20;
+  }
+  @keyframes popUp {
+    0% { opacity: 0; transform: translateY(10px); }
+    20% { opacity: 1; }
+    100% { opacity: 0; transform: translateY(-40px); }
+  }
+
+  /* ---- スマホ縦: 惑星を上(主役)・iPadを下に縦積み ---- */
+  @media (max-width: 640px) {
+    body { flex-direction: column; }
+
+    .world { order: 1; flex: 1 1 auto; min-height: 140px; }
+
+    .pad-col {
+      order: 2;
+      flex: 0 0 auto;
+      width: 100%;
+      min-width: 0;
+      padding: 10px 14px 6px;
+    }
+
+    .ipad { width: 100%; padding: 10px; border-radius: 20px; gap: 8px; }
+
+    /* 正方形を保ったまま、惑星に上半分を譲るサイズへ */
+    #draw {
+      width: clamp(140px, calc(100vh - 660px), 100%);
+      width: clamp(140px, calc(100svh - 660px), 100%);
+      margin: 0 auto;
+    }
+
+    /* 指サイズのタッチターゲット */
+    .pad-tools { flex-wrap: wrap; gap: 6px; row-gap: 8px; justify-content: center; }
+    .swatch { width: 38px; height: 38px; }
+    .pad-btn { min-height: 40px; padding: 8px 16px; font-size: 12px; }
+    .pad-btn.send { flex: 1 1 auto; }
+
+    .hud-top { padding: 14px 16px; }
+    .hud-title { font-size: 20px; }
+
+    /* hud-bottom は固定をやめて最下段に流し込み、描画コラムとの重なりを断つ */
+    .hud-bottom {
+      position: static;
+      order: 3;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+      padding: 10px 16px 14px;
+    }
+    .hud-hint { font-size: 11.5px; letter-spacing: 0.05em; line-height: 1.6; }
+    .hud-tech { align-items: flex-start; gap: 5px; }
+    .hud-tech .tech-row { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body data-screen-label="01 惑星のすみか">
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 01</div>
+    <div class="hud-title">惑星のすみか</div>
+  </div>
+</div>
+
+<div class="pad-col">
+  <div class="ipad">
+    <div class="ipad-label">iPad — おえかき</div>
+    <canvas id="draw" width="600" height="600"></canvas>
+    <div class="pad-tools">
+      <div class="swatch on" style="background:#8ce8ff;color:#8ce8ff" data-c="#8ce8ff"></div>
+      <div class="swatch" style="background:#ffd98a;color:#ffd98a" data-c="#ffd98a"></div>
+      <div class="swatch" style="background:#ffaad4;color:#ffaad4" data-c="#ffaad4"></div>
+      <div class="swatch" style="background:#c9a8ff;color:#c9a8ff" data-c="#c9a8ff"></div>
+      <div class="swatch" style="background:#f4f2ec;color:#f4f2ec" data-c="#f4f2ec"></div>
+      <button class="pad-btn" id="clear">けす</button>
+      <button class="pad-btn send" id="send">惑星へ送る ➤</button>
+    </div>
+  </div>
+</div>
+
+<div class="world"><canvas id="planet"></canvas></div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">iPadに生き物を描いて「惑星へ送る」——惑星の住人になって歩き出します。ドラッグで惑星を回せます。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Three.js + Canvas</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">Unity + AR Foundation (C#)</span><span class="tech-tag">WebSocket同期</span></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/three@0.149.0/build/three.min.js"></script>
+<script>
+// ---------- お絵描きパッド ----------
+const dcv = document.getElementById('draw');
+const dcx = dcv.getContext('2d');
+let drawing = false, last = null, hasInk = false;
+let brush = '#8ce8ff';
+dcx.lineCap = dcx.lineJoin = 'round';
+
+function padPos(e) {
+  const r = dcv.getBoundingClientRect();
+  const p = e.touches ? e.touches[0] : e;
+  return { x: (p.clientX - r.left) / r.width * dcv.width, y: (p.clientY - r.top) / r.height * dcv.height };
+}
+function strokeTo(p) {
+  dcx.strokeStyle = brush;
+  dcx.shadowColor = brush;
+  dcx.shadowBlur = 14;
+  dcx.lineWidth = 16;
+  dcx.beginPath();
+  dcx.moveTo(last.x, last.y);
+  dcx.lineTo(p.x, p.y);
+  dcx.stroke();
+  last = p;
+  hasInk = true;
+}
+dcv.addEventListener('pointerdown', e => { drawing = true; last = padPos(e); strokeTo(padPos(e)); });
+addEventListener('pointermove', e => { if (drawing) strokeTo(padPos(e)); });
+addEventListener('pointerup', () => drawing = false);
+
+document.querySelectorAll('.swatch').forEach(s => s.addEventListener('click', () => {
+  document.querySelectorAll('.swatch').forEach(x => x.classList.remove('on'));
+  s.classList.add('on');
+  brush = s.dataset.c;
+}));
+document.getElementById('clear').addEventListener('click', () => { dcx.clearRect(0,0,600,600); hasInk = false; });
+
+// 描画をトリミングしてテクスチャ化
+function snapshotTrimmed() {
+  const img = dcx.getImageData(0,0,600,600).data;
+  let x0=600, y0=600, x1=0, y1=0, found=false;
+  for (let y=0; y<600; y+=2) for (let x=0; x<600; x+=2) {
+    if (img[(y*600+x)*4+3] > 10) { found=true; if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+  }
+  if (!found) return null;
+  const pad=24, w=x1-x0+pad*2, h=y1-y0+pad*2;
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  out.getContext('2d').drawImage(dcv, x0-pad, y0-pad, w, h, 0, 0, w, h);
+  return out;
+}
+
+// ---------- 惑星 (Three.js) ----------
+const wcv = document.getElementById('planet');
+const renderer = new THREE.WebGLRenderer({ canvas: wcv, antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
+camera.position.set(0, 1.2, 7.2);
+
+const world = new THREE.Group();
+scene.add(world);
+
+// 惑星本体
+const R = 2.2;
+const geo = new THREE.SphereGeometry(R, 48, 48);
+const pos = geo.attributes.position;
+for (let i=0; i<pos.count; i++) {
+  const v = new THREE.Vector3().fromBufferAttribute(pos, i);
+  const n = 1 + 0.045 * Math.sin(v.x*3.1) * Math.sin(v.y*4.3) * Math.sin(v.z*2.7);
+  v.multiplyScalar(n);
+  pos.setXYZ(i, v.x, v.y, v.z);
+}
+geo.computeVertexNormals();
+const planet = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+  color: 0x1c2b4a, roughness: 0.85, metalness: 0.1,
+  emissive: 0x16223d, emissiveIntensity: 0.6
+}));
+world.add(planet);
+
+// 発光する街あかり（小さな点）
+const cityGeo = new THREE.BufferGeometry();
+const cityPts = [];
+for (let i=0; i<260; i++) {
+  const v = new THREE.Vector3().randomDirection().multiplyScalar(R*1.015);
+  cityPts.push(v.x, v.y, v.z);
+}
+cityGeo.setAttribute('position', new THREE.Float32BufferAttribute(cityPts, 3));
+world.add(new THREE.Points(cityGeo, new THREE.PointsMaterial({ color: 0xffd98a, size: 0.045, transparent: true, opacity: 0.9 })));
+
+// 大気のグロー
+const glowTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(128,128,60,128,128,128);
+  grad.addColorStop(0, 'rgba(140,200,255,0.35)');
+  grad.addColorStop(1, 'rgba(140,200,255,0)');
+  g.fillStyle = grad; g.fillRect(0,0,256,256);
+  return new THREE.CanvasTexture(c);
+})();
+const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false }));
+glow.scale.setScalar(R*3.4);
+scene.add(glow);
+
+// 星空
+const starGeo = new THREE.BufferGeometry();
+const sp = [];
+for (let i=0; i<700; i++) {
+  const v = new THREE.Vector3().randomDirection().multiplyScalar(40 + Math.random()*50);
+  sp.push(v.x, v.y, v.z);
+}
+starGeo.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
+scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xf4f2ec, size: 0.18, transparent: true, opacity: 0.8 })));
+
+scene.add(new THREE.AmbientLight(0x8899cc, 0.5));
+const sun = new THREE.DirectionalLight(0xfff2dd, 1.4);
+sun.position.set(5, 3, 4);
+scene.add(sun);
+
+// ---------- 住人 ----------
+const dwellers = [];
+function addDweller(srcCanvas) {
+  const tex = new THREE.CanvasTexture(srcCanvas);
+  const aspect = srcCanvas.width / srcCanvas.height;
+  const size = 0.85;
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  spr.scale.set(size*aspect, size, 1);
+  world.add(spr);
+  dwellers.push({
+    spr,
+    aspect,
+    theta: Math.random()*Math.PI*2,
+    phi: Math.acos(2*Math.random()-1),
+    heading: Math.random()*Math.PI*2,
+    speed: 0.16 + Math.random()*0.18,
+    born: performance.now(),
+    bobP: Math.random()*7
+  });
+}
+function placeDweller(d, t) {
+  // 球面上をランダムウォーク
+  const dt = 0.016;
+  d.heading += (Math.random()-0.5) * 0.06;
+  d.theta += Math.cos(d.heading) * d.speed * dt;
+  d.phi   += Math.sin(d.heading) * d.speed * dt * 0.6;
+  d.phi = Math.max(0.25, Math.min(Math.PI-0.25, d.phi));
+  const bob = 0.05 * Math.abs(Math.sin(t*0.004 + d.bobP));
+  const r = R * 1.02 + d.spr.scale.y*0.42 + bob;
+  d.spr.position.set(
+    r * Math.sin(d.phi) * Math.cos(d.theta),
+    r * Math.cos(d.phi),
+    r * Math.sin(d.phi) * Math.sin(d.theta)
+  );
+  const age = (t - d.born) / 600;
+  const s = Math.min(1, age);
+  const base = 0.85;
+  d.spr.material.opacity = s;
+  d.spr.scale.setScalar(base * (0.6 + 0.4*s));
+  d.spr.scale.x *= d.aspect || 1;
+}
+
+document.getElementById('send').addEventListener('click', () => {
+  const snap = snapshotTrimmed();
+  if (!snap) return;
+  addDweller(snap);
+  dcx.clearRect(0,0,600,600);
+  hasInk = false;
+  const pop = document.createElement('div');
+  pop.className = 'pop';
+  pop.textContent = '✦ 惑星のすみかへ';
+  if (innerWidth <= 640) {
+    // 縦積み時は惑星のそばに灯す
+    const wr = wcv.parentElement.getBoundingClientRect();
+    pop.style.left = (wr.left + wr.width / 2 - 56) + 'px';
+    pop.style.top = (wr.top + wr.height * 0.62) + 'px';
+  } else {
+    pop.style.left = '380px';
+    pop.style.top = (innerHeight/2) + 'px';
+  }
+  document.body.appendChild(pop);
+  setTimeout(() => pop.remove(), 1700);
+});
+
+// ドラッグで回転
+let dragging = false, px = 0, vel = 0.0022;
+wcv.addEventListener('pointerdown', e => { dragging = true; px = e.clientX; });
+addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const dx = e.clientX - px;
+  px = e.clientX;
+  world.rotation.y += dx * 0.005;
+});
+addEventListener('pointerup', () => dragging = false);
+
+function fit() {
+  const r = wcv.parentElement.getBoundingClientRect();
+  renderer.setSize(r.width, r.height, false);
+  camera.aspect = r.width / r.height;
+  // スマホ縦積みでは帯状になるぶん少し引いて、惑星全体を収める
+  if (innerWidth <= 640) camera.position.set(0, 0.55, 8.8);
+  else camera.position.set(0, 1.2, 7.2);
+  camera.updateProjectionMatrix();
+}
+fit();
+addEventListener('resize', fit);
+
+function loop(t) {
+  if (!dragging) world.rotation.y += vel;
+  for (const d of dwellers) placeDweller(d, t);
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// 最初の住人（例）
+(function seed() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 200;
+  const g = c.getContext('2d');
+  g.strokeStyle = '#8ce8ff';
+  g.shadowColor = '#8ce8ff';
+  g.shadowBlur = 12;
+  g.lineWidth = 10;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.arc(100, 90, 50, 0, Math.PI*2);
+  g.stroke();
+  g.beginPath(); g.arc(82, 80, 5, 0, 7); g.fillStyle = '#8ce8ff'; g.fill();
+  g.beginPath(); g.arc(118, 80, 5, 0, 7); g.fill();
+  g.beginPath(); g.moveTo(80, 110); g.quadraticCurveTo(100, 128, 120, 110); g.stroke();
+  g.beginPath(); g.moveTo(70, 145) ; g.lineTo(70, 175); g.moveTo(130, 145); g.lineTo(130, 175); g.stroke();
+  addDweller(c);
+})();
+</script>
+</body>
+</html>

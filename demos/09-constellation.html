@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>09 星座を紡ぐ夜</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="星と星をなぞって繋ぐと、その形から星座の獣が生まれて夜空を駆ける。みんなの獣が同じ空に住む。">
+<meta property="og:title" content="09 星座を紡ぐ夜 — hikari">
+<meta property="og:description" content="星と星をなぞって繋ぐと、その形から星座の獣が生まれて夜空を駆ける。みんなの獣が同じ空に住む。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+</head>
+<body data-screen-label="09 星座を紡ぐ夜">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 09</div>
+    <div class="hud-title">星座を紡ぐ夜</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">星をつぎつぎにタップして繋ぐと星座になります。3つ以上繋いで、すばやく二度たたく——<br>星座から獣が生まれ、夜空を駆けていきます。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas 2D</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">Unity + スマホ連携 (WebSocket)</span></div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+let W, H, DPR = Math.min(devicePixelRatio, 2);
+
+let stars = [];
+function resize() {
+  W = cv.width = innerWidth*DPR;
+  H = cv.height = innerHeight*DPR;
+  stars = Array.from({length: 90}, () => ({
+    x: (0.04 + Math.random()*0.92)*W,
+    y: (0.06 + Math.random()*0.88)*H,
+    r: (1.2 + Math.random()*2.4)*DPR,
+    ph: Math.random()*7
+  }));
+}
+resize();
+addEventListener('resize', resize);
+
+let chain = [];        // 繋いだ星
+let beasts = [];
+let ghosts = [];       // 生まれたあとに残る星座線
+let mouse = null;
+
+function nearestStar(x, y) {
+  let best = null, bd = 40*DPR;
+  for (const s of stars) {
+    const d = Math.hypot(s.x-x, s.y-y);
+    if (d < bd) { bd = d; best = s; }
+  }
+  return best;
+}
+
+addEventListener('pointermove', e => mouse = { x: e.clientX*DPR, y: e.clientY*DPR });
+addEventListener('pointerdown', e => {
+  const s = nearestStar(e.clientX*DPR, e.clientY*DPR);
+  if (!s) return;
+  if (chain.length && chain[chain.length-1] === s) return;
+  if (chain.length >= 3 && s === chain[0]) { birth(); return; }
+  if (!chain.includes(s)) chain.push(s);
+});
+// 二度たたき（マウス・タッチ統一）— dblclick は touch-action:none のタッチでは発火しないため pointer で検出
+let lastTap = { t: -1e9, x: 0, y: 0 };
+addEventListener('pointerdown', e => {
+  const now = performance.now();
+  if (now - lastTap.t < 350 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+    lastTap.t = -1e9;                      // 3連打で二重発火させない
+    if (chain.length >= 3) birth();
+  } else {
+    lastTap = { t: now, x: e.clientX, y: e.clientY };
+  }
+});
+addEventListener('keydown', e => { if (e.key === 'Enter' && chain.length >= 3) birth(); });
+
+// ---- 星座 → 獣 ----
+function resample(pts, step) {
+  const out = [{...pts[0]}];
+  for (let i=1; i<pts.length; i++) {
+    let a = out[out.length-1], b = pts[i];
+    let d = Math.hypot(b.x-a.x, b.y-a.y);
+    while (d > step) {
+      const r = step/d;
+      const nx = a.x+(b.x-a.x)*r, ny = a.y+(b.y-a.y)*r;
+      out.push({x:nx, y:ny});
+      a = out[out.length-1];
+      d = Math.hypot(b.x-a.x, b.y-a.y);
+    }
+  }
+  return out;
+}
+
+const BEAST_COLORS = ['#ffd98a', '#c9a8ff', '#8ce8ff', '#ffaad4'];
+function birth() {
+  const seg = 14*DPR;
+  const pts = resample(chain, seg);
+  if (pts.length < 4) { chain = []; return; }
+  ghosts.push({ pts: chain.map(s => ({x:s.x, y:s.y})), a: 0.9 });
+  beasts.push({
+    pts, seg,
+    heading: Math.random()*Math.PI*2,
+    speed: (1.8+Math.random()*1.6)*DPR,
+    c: BEAST_COLORS[beasts.length % BEAST_COLORS.length],
+    ph: Math.random()*7,
+    born: performance.now()
+  });
+  if (beasts.length > 8) beasts.shift();
+  chain = [];
+}
+
+function angleTo(from, to) {
+  let d = to-from;
+  while (d > Math.PI) d -= Math.PI*2;
+  while (d < -Math.PI) d += Math.PI*2;
+  return d;
+}
+function stepBeast(b, t) {
+  b.heading += Math.sin(t*0.0014 + b.ph)*0.05;
+  const m = 90*DPR, h = b.pts[0];
+  if (h.x < m) b.heading += angleTo(b.heading, 0)*0.09;
+  if (h.x > W-m) b.heading += angleTo(b.heading, Math.PI)*0.09;
+  if (h.y < m) b.heading += angleTo(b.heading, Math.PI/2)*0.09;
+  if (h.y > H-m) b.heading += angleTo(b.heading, -Math.PI/2)*0.09;
+  h.x += Math.cos(b.heading)*b.speed;
+  h.y += Math.sin(b.heading)*b.speed;
+  for (let i=1; i<b.pts.length; i++) {
+    const a = b.pts[i], p = b.pts[i-1];
+    const dx = p.x-a.x, dy = p.y-a.y, d = Math.hypot(dx,dy)||1;
+    const pull = (d-b.seg)/d;
+    a.x += dx*pull; a.y += dy*pull;
+  }
+}
+function drawBeast(b, t) {
+  const fade = Math.min(1, (performance.now()-b.born)/900);
+  const n = b.pts.length;
+  cx.globalAlpha = fade;
+  // 体の線
+  cx.strokeStyle = b.c;
+  cx.shadowColor = b.c;
+  cx.shadowBlur = 16*DPR;
+  cx.lineCap = cx.lineJoin = 'round';
+  cx.lineWidth = 2*DPR;
+  cx.beginPath();
+  cx.moveTo(b.pts[0].x, b.pts[0].y);
+  for (const p of b.pts) cx.lineTo(p.x, p.y);
+  cx.stroke();
+  // 関節の星
+  for (let i=0; i<n; i++) {
+    const tw = 0.6 + 0.4*Math.sin(t*0.006 + i*1.3 + b.ph);
+    const r = (i === 0 ? 4.4 : 2.6*(1-i/n) + 1) * DPR * tw;
+    cx.fillStyle = i === 0 ? '#ffffff' : b.c;
+    cx.beginPath();
+    cx.arc(b.pts[i].x, b.pts[i].y, r, 0, 7);
+    cx.fill();
+  }
+  // 流れる粒子
+  if (Math.random() < 0.5) {
+    const i = Math.floor(Math.random()*n);
+    cx.globalAlpha = fade*0.5;
+    cx.beginPath();
+    cx.arc(b.pts[i].x + (Math.random()-0.5)*10*DPR, b.pts[i].y + (Math.random()-0.5)*10*DPR, 1.2*DPR, 0, 7);
+    cx.fill();
+  }
+  cx.shadowBlur = 0;
+  cx.globalAlpha = 1;
+}
+
+// ---- ループ ----
+function loop(t) {
+  cx.fillStyle = 'rgba(5,5,12,0.32)';
+  cx.fillRect(0,0,W,H);
+
+  // 星
+  for (const s of stars) {
+    const tw = 0.45 + 0.55*Math.sin(t*0.002 + s.ph);
+    cx.fillStyle = `rgba(244,242,236,${0.35 + 0.55*tw})`;
+    cx.shadowColor = '#f4f2ec';
+    cx.shadowBlur = 6*DPR*tw;
+    cx.beginPath();
+    cx.arc(s.x, s.y, s.r * (0.8+0.3*tw), 0, 7);
+    cx.fill();
+    cx.shadowBlur = 0;
+  }
+
+  // 繋ぎかけの星座
+  if (chain.length) {
+    cx.strokeStyle = '#f4f2ec';
+    cx.shadowColor = '#f4f2ec';
+    cx.shadowBlur = 10*DPR;
+    cx.lineWidth = 1.6*DPR;
+    cx.beginPath();
+    cx.moveTo(chain[0].x, chain[0].y);
+    for (const s of chain) cx.lineTo(s.x, s.y);
+    if (mouse) { cx.setLineDash([6*DPR, 8*DPR]); cx.lineTo(mouse.x, mouse.y); }
+    cx.stroke();
+    cx.setLineDash([]);
+    cx.shadowBlur = 0;
+    // 選択中の星に輪
+    for (const s of chain) {
+      cx.strokeStyle = 'rgba(255,217,138,0.8)';
+      cx.lineWidth = 1.2*DPR;
+      cx.beginPath();
+      cx.arc(s.x, s.y, s.r + 7*DPR, 0, 7);
+      cx.stroke();
+    }
+  }
+
+  // 残った星座線（ゆっくり消える）
+  ghosts = ghosts.filter(g => g.a > 0.02);
+  for (const g of ghosts) {
+    g.a *= 0.997;
+    cx.strokeStyle = `rgba(201,168,255,${g.a*0.5})`;
+    cx.lineWidth = 1*DPR;
+    cx.beginPath();
+    cx.moveTo(g.pts[0].x, g.pts[0].y);
+    for (const p of g.pts) cx.lineTo(p.x, p.y);
+    cx.stroke();
+  }
+
+  for (const b of beasts) { stepBeast(b, t); drawBeast(b, t); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

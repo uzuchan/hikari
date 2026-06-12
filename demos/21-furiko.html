@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>21 振り子の夜</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="三台の端末に吊られた光の振り子。ばらばらに乱しても、見ているうちにひとつの呼吸へそろってゆく。">
+<meta property="og:title" content="21 振り子の夜 — hikari">
+<meta property="og:description" content="三台の端末に吊られた光の振り子。ばらばらに乱しても、見ているうちにひとつの呼吸へそろってゆく。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+<style>
+  /* 3端末の見立てラベル(15-wataridori の流儀) */
+  .dev-label {
+    position: fixed;
+    top: 21.5vh;   /* 枠(20vh〜)の内側上部。HUDタイトルと衝突しない */
+    transform: translateX(-50%);
+    font-family: var(--serif);
+    font-size: 12px;
+    letter-spacing: 0.34em;
+    color: var(--dimmer);
+    pointer-events: none;
+    z-index: 5;
+    text-shadow: 0 0 16px rgba(244, 242, 236, 0.18);
+    white-space: nowrap;
+    text-align: center;
+  }
+  .dev-label small {
+    display: block;
+    margin-top: 6px;
+    font-family: var(--sans);
+    font-size: 9px;
+    letter-spacing: 0.26em;
+    color: rgba(244, 242, 236, 0.18);
+  }
+  .dev-a { left: 16.7%; }
+  .dev-b { left: 50%; }
+  .dev-c { left: 83.3%; }
+  @media (max-width: 640px) {
+    .dev-label { font-size: 10px; letter-spacing: 0.22em; }
+  }
+</style>
+</head>
+<body data-screen-label="21 振り子の夜">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="dev-label dev-a">ひだりの夜<small>DEVICE A</small></div>
+<div class="dev-label dev-b">まんなかの夜<small>DEVICE B</small></div>
+<div class="dev-label dev-c">みぎの夜<small>DEVICE C</small></div>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 21</div>
+    <div class="hud-title">振り子の夜</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">ふりこをつかんで、放してみてください。ばらばらの揺れが、やがてひとつの呼吸にそろいます。<br>そろった夜には、床にひとすじの光がともります。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas 2D（1画面で擬似再現）</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">Swift (加速度) + WebSocket + 投影</span></div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+let W, H, DPR = Math.min(devicePixelRatio, 2);
+
+const PALETTE = ['#ffd98a', '#ffaad4', '#8ce8ff'];   // A=金 B=桜 C=氷青(振り子の三色)
+const WHITE = '#f4f2ec';
+
+// 発光スプライト(プリレンダ)
+function glowSprite(c, size) {
+  const s = document.createElement('canvas');
+  s.width = s.height = size;
+  const g = s.getContext('2d');
+  const gr = g.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  gr.addColorStop(0, '#fffbe8');
+  gr.addColorStop(0.25, c);
+  gr.addColorStop(0.6, c + '55');
+  gr.addColorStop(1, c + '00');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, size, size);
+  return s;
+}
+const bobSprites = PALETTE.map(c => glowSprite(c, 96));
+const dustSprite = glowSprite(WHITE, 32);
+
+// ---- 振り子(見た目)×位相振動子(心臓部) ----
+// そろう仕組みは蔵本モデル: φi' = ωi + (K/N)Σ sin(φj - φi)
+const N = 3;
+const OMEGA0 = 2.35;               // 基本角速度(周期 ~2.7秒)
+const K = 0.18;                    // 結合の強さ(乱してから30〜60秒でそろう塩梅)
+let pend = [];                     // {phi, om, amp, held, theta, thetaHeld, lastX}
+let frames = [];                   // 各端末の枠 {x,y,w,h,ax,ay,L}
+let dust = [];
+
+function resize() {
+  W = cv.width = innerWidth * DPR;
+  H = cv.height = innerHeight * DPR;
+  const top = H * 0.20, bot = H * 0.80;
+  const m = 10 * DPR;
+  frames = [];
+  for (let i = 0; i < N; i++) {
+    const x = (W / N) * i + m, w = W / N - m * 2;
+    const y = top, h = bot - top;
+    const ax = x + w / 2, ay = y + h * 0.13;
+    const L = Math.min(w * 0.62, h * 0.62);
+    frames.push({ x, y, w, h, ax, ay, L });
+  }
+  if (pend.length === 0) {
+    pend = Array.from({ length: N }, (_, i) => ({
+      phi: i * 2.09 + (Math.random() - 0.5) * 0.6,   // はじめは三つの呼吸が離れている
+      om: OMEGA0 * (1 + (i - 1) * 0.02),
+      amp: 0.42 + Math.random() * 0.1,
+      held: false, theta: 0, lastX: 0, vx: 0,
+    }));
+  }
+  dust = Array.from({ length: 46 }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    r: (2.5 + Math.random() * 5) * DPR,
+    vy: -(0.03 + Math.random() * 0.08) * DPR,
+    ph: Math.random() * 7,
+  }));
+}
+resize();
+addEventListener('resize', resize);
+
+// ---- そろい具合(オーダーパラメータ r)と床の光 ----
+let order = 0;          // 0..1 平滑値
+let syncedAt = 0;       // 直近に「そろった」時刻(祝いのクールダウン)
+
+// ---- 音: そろった瞬間のしずかな和音(任意・全面防御) ----
+let ac = null, master = null;
+function ensureAudio() {
+  if (ac) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    ac = new AC();
+    if (ac.state === 'suspended') ac.resume().catch(() => {});
+    master = ac.createGain();
+    master.gain.value = 0.18;
+    master.connect(ac.destination);
+  } catch (e) { ac = null; }
+}
+function chord() {
+  if (!ac || !master) return;
+  try {
+    const t0 = ac.currentTime;
+    for (const [f, v] of [[440, 0.05], [659.25, 0.035]]) {   // A4 + E5
+      const o = ac.createOscillator();
+      o.type = 'sine'; o.frequency.value = f;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(v, t0 + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.2);
+      o.connect(g); g.connect(master);
+      o.start(t0); o.stop(t0 + 2.3);
+      o.onended = () => { try { o.disconnect(); g.disconnect(); } catch (_) {} };
+    }
+  } catch (e) { /* 音は飾り */ }
+}
+
+// ---- 入力: 振り子をつかむ・放す(マウス/タッチ統一) ----
+let grab = -1;
+function bobPos(i) {
+  const f = frames[i], p = pend[i];
+  const th = p.held ? p.theta : p.amp * Math.sin(p.phi);
+  return { x: f.ax + Math.sin(th) * f.L, y: f.ay + Math.cos(th) * f.L, th };
+}
+function setHeldTheta(i, cxp, cyp) {
+  const f = frames[i];
+  const dx = cxp - f.ax, dy = Math.max(20 * DPR, cyp - f.ay);
+  pend[i].theta = Math.max(-1.1, Math.min(1.1, Math.atan2(dx, dy)));
+}
+addEventListener('pointerdown', e => {
+  if (e.target.closest && e.target.closest('.hud-top, .hud-bottom')) return;
+  ensureAudio();
+  const px = e.clientX * DPR, py = e.clientY * DPR;
+  for (let i = 0; i < N; i++) {
+    const b = bobPos(i);
+    const d = Math.hypot(px - b.x, py - b.y);
+    if (d < 64 * DPR) {
+      grab = i;
+      pend[i].held = true;
+      pend[i].lastX = px;
+      pend[i].vx = 0;
+      setHeldTheta(i, px, py);
+      return;
+    }
+  }
+  // 枠の空白タップ = その振り子へ小さなノック(乱す)
+  const fi = Math.max(0, Math.min(N - 1, Math.floor(px / (W / N))));
+  pend[fi].phi += (Math.random() - 0.5) * 1.6;
+  pend[fi].amp = Math.min(0.75, pend[fi].amp + 0.16);
+});
+addEventListener('pointermove', e => {
+  if (grab < 0) return;
+  const px = e.clientX * DPR, py = e.clientY * DPR;
+  pend[grab].vx = px - pend[grab].lastX;
+  pend[grab].lastX = px;
+  setHeldTheta(grab, px, py);
+});
+function release() {
+  if (grab < 0) return;
+  const p = pend[grab];
+  p.held = false;
+  // 放した角度と手の速さから、新しい揺れへ滑らかに継ぐ
+  const sign = p.vx >= 0 ? 1 : -1;
+  p.amp = Math.max(0.18, Math.min(0.95, Math.abs(p.theta) + Math.abs(p.vx) * 0.0012));
+  const s = Math.max(-1, Math.min(1, p.theta / p.amp));
+  p.phi = Math.atan2(s, sign * Math.sqrt(Math.max(0, 1 - s * s)));
+  grab = -1;
+}
+addEventListener('pointerup', release);
+addEventListener('pointercancel', release);
+
+// ---- ループ ----
+let last = performance.now();
+function loop(t) {
+  const dt = Math.min(0.05, (t - last) / 1000);
+  last = t;
+
+  cx.fillStyle = 'rgba(8,8,14,0.20)';
+  cx.fillRect(0, 0, W, H);
+
+  // 塵 — 夜の呼吸
+  for (const d of dust) {
+    d.y += d.vy;
+    d.x += Math.sin(t * 0.0004 + d.ph) * 0.1 * DPR;
+    if (d.y < -20) { d.y = H + 20; d.x = Math.random() * W; }
+    cx.globalAlpha = 0.07 + 0.07 * Math.sin(t * 0.0015 + d.ph);
+    cx.drawImage(dustSprite, d.x - d.r, d.y - d.r, d.r * 2, d.r * 2);
+  }
+  cx.globalAlpha = 1;
+
+  // 蔵本結合 — ばらばらの位相が、ゆっくりひとつへ
+  for (let i = 0; i < N; i++) {
+    if (pend[i].held) continue;
+    let pull = 0;
+    for (let j = 0; j < N; j++) if (j !== i && !pend[j].held) pull += Math.sin(pend[j].phi - pend[i].phi);
+    pend[i].phi += (pend[i].om + (K / N) * pull) * dt;
+    // 振幅はゆっくり基準へ還る
+    pend[i].amp += (0.42 - pend[i].amp) * dt * 0.06;
+  }
+
+  // そろい具合 r = |Σ e^{iφ}| / N
+  let sx = 0, sy = 0, nFree = 0;
+  for (const p of pend) if (!p.held) { sx += Math.cos(p.phi); sy += Math.sin(p.phi); nFree++; }
+  const r = nFree > 0 ? Math.hypot(sx, sy) / nFree : 0;
+  order += (r - order) * dt * 1.5;
+  cv.dataset.order = order.toFixed(3);   // 検証用の覗き窓(描画には使わない)
+
+  // そろった瞬間(初到達)のしるし
+  if (order > 0.96 && t - syncedAt > 12000) {
+    syncedAt = t;
+    chord();
+  }
+
+  // 端末の枠
+  for (const f of frames) {
+    cx.strokeStyle = 'rgba(244,242,236,0.10)';
+    cx.lineWidth = 1 * DPR;
+    cx.beginPath();
+    if (cx.roundRect) cx.roundRect(f.x, f.y, f.w, f.h, 18 * DPR); else cx.rect(f.x, f.y, f.w, f.h);
+    cx.stroke();
+  }
+
+  // 床の光 — 呼吸がそろうほど、ひとすじ灯る
+  const beamA = Math.max(0, (order - 0.72) / 0.28);
+  if (beamA > 0.01) {
+    const by = frames[0].y + frames[0].h + 18 * DPR;
+    const g = cx.createLinearGradient(W * 0.12, 0, W * 0.88, 0);
+    g.addColorStop(0, 'rgba(244,242,236,0)');
+    g.addColorStop(0.5, `rgba(244,242,236,${(0.8 * beamA).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(244,242,236,0)');
+    cx.strokeStyle = g;
+    cx.lineWidth = 1.6 * DPR;
+    cx.shadowColor = WHITE;
+    cx.shadowBlur = 22 * DPR * beamA;
+    cx.beginPath();
+    cx.moveTo(W * 0.12, by);
+    cx.lineTo(W * 0.88, by);
+    cx.stroke();
+    cx.shadowBlur = 0;
+  }
+
+  // 振り子
+  for (let i = 0; i < N; i++) {
+    const f = frames[i];
+    const b = bobPos(i);
+    const c = PALETTE[i];
+    // 糸
+    cx.strokeStyle = 'rgba(244,242,236,0.32)';
+    cx.lineWidth = 1 * DPR;
+    cx.beginPath();
+    cx.moveTo(f.ax, f.ay);
+    cx.lineTo(b.x, b.y);
+    cx.stroke();
+    // 支点の小さな灯
+    cx.globalAlpha = 0.5;
+    cx.drawImage(dustSprite, f.ax - 6 * DPR, f.ay - 6 * DPR, 12 * DPR, 12 * DPR);
+    cx.globalAlpha = 1;
+    // 玉(つかんでいる間はひとまわり明るく)
+    const s = (pend[i].held ? 64 : 52) * DPR;
+    cx.drawImage(bobSprites[i], b.x - s / 2, b.y - s / 2, s, s);
+    // 中心の芯
+    cx.beginPath();
+    cx.arc(b.x, b.y, 3.2 * DPR, 0, 7);
+    cx.fillStyle = '#fffbe8';
+    cx.shadowColor = c;
+    cx.shadowBlur = 14 * DPR;
+    cx.fill();
+    cx.shadowBlur = 0;
+  }
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

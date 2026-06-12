@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>06 言葉の雨</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="文字が雨のように降る。触れた言葉は弾けて、その意味する風景——雪、花、火——に変わる。">
+<meta property="og:title" content="06 言葉の雨 — hikari">
+<meta property="og:description" content="文字が雨のように降る。触れた言葉は弾けて、その意味する風景——雪、花、火——に変わる。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+</head>
+<body data-screen-label="06 言葉の雨">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 06</div>
+    <div class="hud-title">言葉の雨</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">降ってくる文字に触れると、言葉が「その意味する風景」に変わります。<br>雪は結晶に、火は火の粉に、蝶は羽ばたきに。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas 2D</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">Unity + タッチウォール (C#)</span></div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+let W, H, DPR = Math.min(devicePixelRatio, 2);
+function resize() { W = cv.width = innerWidth*DPR; H = cv.height = innerHeight*DPR; }
+resize();
+addEventListener('resize', resize);
+
+const WORDS = {
+  '雪': { c: '#eaf4ff', kind: 'snow' },
+  '花': { c: '#ffaad4', kind: 'petal' },
+  '火': { c: '#ffb070', kind: 'fire' },
+  '月': { c: '#ffd98a', kind: 'moon' },
+  '星': { c: '#fff6c8', kind: 'star' },
+  '風': { c: '#8ce8ff', kind: 'wind' },
+  '蝶': { c: '#c9a8ff', kind: 'butterfly' },
+  '光': { c: '#f4f2ec', kind: 'light' },
+};
+const KEYS = Object.keys(WORDS);
+
+let glyphs = [], effects = [];
+
+function spawnGlyph() {
+  const k = KEYS[Math.floor(Math.random()*KEYS.length)];
+  glyphs.push({
+    ch: k, ...WORDS[k],
+    x: (0.06 + Math.random()*0.88) * W,
+    y: -60*DPR,
+    vy: (0.8 + Math.random()*1.4) * DPR,
+    size: (30 + Math.random()*30) * DPR,
+    sway: Math.random()*7,
+    rot: (Math.random()-0.5)*0.3
+  });
+}
+
+// ---- 触れる ----
+function tap(x, y) {
+  for (let i = glyphs.length-1; i >= 0; i--) {
+    const g = glyphs[i];
+    if (Math.hypot(g.x-x, g.y-y) < g.size*1.1) {
+      burst(g);
+      glyphs.splice(i, 1);
+      return;
+    }
+  }
+}
+addEventListener('pointerdown', e => tap(e.clientX*DPR, e.clientY*DPR));
+addEventListener('pointermove', e => { if (e.buttons) tap(e.clientX*DPR, e.clientY*DPR); });
+
+function burst(g) {
+  const n = { snow: 26, petal: 22, fire: 36, moon: 1, star: 20, wind: 16, butterfly: 7, light: 30 }[g.kind];
+  for (let i=0; i<n; i++) {
+    const a = Math.random()*Math.PI*2, sp = (0.5+Math.random()*2.5)*DPR;
+    effects.push({
+      kind: g.kind, c: g.c,
+      x: g.x, y: g.y,
+      vx: Math.cos(a)*sp, vy: Math.sin(a)*sp,
+      life: 1, decay: 0.004 + Math.random()*0.006,
+      sz: (3+Math.random()*7)*DPR,
+      ph: Math.random()*7, rot: Math.random()*7, vr: (Math.random()-0.5)*0.2
+    });
+  }
+}
+
+// ---- エフェクト挙動 ----
+function stepEffect(p, t) {
+  switch (p.kind) {
+    case 'snow':
+      p.vy += 0.012*DPR; p.vy = Math.min(p.vy, 0.8*DPR);
+      p.vx = Math.sin(t*0.002 + p.ph) * 0.5*DPR;
+      p.rot += 0.01;
+      break;
+    case 'petal':
+      p.vy += 0.02*DPR; p.vy = Math.min(p.vy, 1.1*DPR);
+      p.vx += Math.sin(t*0.003 + p.ph)*0.03*DPR;
+      p.rot += p.vr;
+      break;
+    case 'fire':
+      p.vy -= 0.05*DPR;
+      p.vx += (Math.random()-0.5)*0.2*DPR;
+      p.decay = 0.014;
+      break;
+    case 'moon':
+      p.vy = -0.35*DPR; p.vx = 0;
+      p.sz = Math.min(p.sz + 0.6*DPR, 46*DPR);
+      p.decay = 0.0035;
+      break;
+    case 'star':
+      p.vx *= 0.96; p.vy *= 0.96;
+      break;
+    case 'wind':
+      p.vx += 0.12*DPR; p.vy *= 0.92;
+      break;
+    case 'butterfly':
+      p.vx += Math.sin(t*0.004 + p.ph)*0.1*DPR;
+      p.vy += Math.cos(t*0.005 + p.ph)*0.1*DPR - 0.015*DPR;
+      p.decay = 0.0035;
+      break;
+    case 'light':
+      p.vx *= 0.93; p.vy *= 0.93;
+      p.decay = 0.012;
+      break;
+  }
+  p.x += p.vx; p.y += p.vy;
+  p.life -= p.decay;
+}
+
+function drawEffect(p, t) {
+  cx.globalAlpha = Math.max(0, p.life);
+  cx.shadowColor = p.c;
+  cx.shadowBlur = 10*DPR;
+  cx.fillStyle = p.c;
+  cx.strokeStyle = p.c;
+  switch (p.kind) {
+    case 'snow': { // 結晶
+      cx.save();
+      cx.translate(p.x, p.y);
+      cx.rotate(p.rot);
+      cx.lineWidth = 1.2*DPR;
+      for (let i=0; i<6; i++) {
+        cx.rotate(Math.PI/3);
+        cx.beginPath();
+        cx.moveTo(0,0); cx.lineTo(0,-p.sz);
+        cx.moveTo(0,-p.sz*0.6); cx.lineTo(p.sz*0.25,-p.sz*0.8);
+        cx.moveTo(0,-p.sz*0.6); cx.lineTo(-p.sz*0.25,-p.sz*0.8);
+        cx.stroke();
+      }
+      cx.restore();
+      break;
+    }
+    case 'petal':
+      cx.save();
+      cx.translate(p.x, p.y);
+      cx.rotate(p.rot);
+      cx.beginPath();
+      cx.ellipse(0, 0, p.sz*0.4, p.sz*0.8, 0, 0, 7);
+      cx.fill();
+      cx.restore();
+      break;
+    case 'butterfly': {
+      const flap = Math.abs(Math.sin(t*0.02 + p.ph));
+      cx.save();
+      cx.translate(p.x, p.y);
+      cx.rotate(Math.atan2(p.vy, p.vx) + Math.PI/2);
+      for (const s of [-1,1]) {
+        cx.save();
+        cx.scale(s*(0.3+0.7*flap), 1);
+        cx.beginPath();
+        cx.ellipse(p.sz*0.5, 0, p.sz*0.55, p.sz*0.35, -0.4, 0, 7);
+        cx.fill();
+        cx.restore();
+      }
+      cx.restore();
+      break;
+    }
+    case 'moon': {
+      const gr = cx.createRadialGradient(p.x, p.y, p.sz*0.2, p.x, p.y, p.sz);
+      gr.addColorStop(0, p.c);
+      gr.addColorStop(1, 'rgba(255,217,138,0)');
+      cx.fillStyle = gr;
+      cx.beginPath(); cx.arc(p.x, p.y, p.sz, 0, 7); cx.fill();
+      break;
+    }
+    case 'star': {
+      const tw = 0.5 + 0.5*Math.sin(t*0.01 + p.ph*5);
+      cx.globalAlpha *= tw;
+      cx.beginPath(); cx.arc(p.x, p.y, p.sz*0.35, 0, 7); cx.fill();
+      cx.lineWidth = 1*DPR;
+      cx.beginPath();
+      cx.moveTo(p.x-p.sz, p.y); cx.lineTo(p.x+p.sz, p.y);
+      cx.moveTo(p.x, p.y-p.sz); cx.lineTo(p.x, p.y+p.sz);
+      cx.stroke();
+      break;
+    }
+    case 'wind':
+      cx.lineWidth = 1.6*DPR;
+      cx.beginPath();
+      cx.moveTo(p.x - p.vx*6, p.y - p.vy*6);
+      cx.lineTo(p.x, p.y);
+      cx.stroke();
+      break;
+    default: // fire, light
+      cx.beginPath(); cx.arc(p.x, p.y, p.sz*0.4, 0, 7); cx.fill();
+  }
+  cx.shadowBlur = 0;
+  cx.globalAlpha = 1;
+}
+
+// ---- ループ ----
+let spawnAcc = 0;
+function loop(t) {
+  cx.fillStyle = 'rgba(8,8,15,0.28)';
+  cx.fillRect(0,0,W,H);
+
+  spawnAcc++;
+  if (spawnAcc > 38 && glyphs.length < 14) { spawnGlyph(); spawnAcc = 0; }
+
+  cx.textAlign = 'center';
+  cx.textBaseline = 'middle';
+  for (let i = glyphs.length-1; i >= 0; i--) {
+    const g = glyphs[i];
+    g.y += g.vy;
+    g.x += Math.sin(t*0.001 + g.sway) * 0.3*DPR;
+    if (g.y > H + 80*DPR) { glyphs.splice(i,1); continue; }
+    cx.save();
+    cx.translate(g.x, g.y);
+    cx.rotate(g.rot * Math.sin(t*0.0008 + g.sway));
+    cx.font = `500 ${g.size}px 'Shippori Mincho', serif`;
+    cx.shadowColor = g.c;
+    cx.shadowBlur = 18*DPR;
+    cx.fillStyle = g.c;
+    cx.fillText(g.ch, 0, 0);
+    cx.shadowBlur = 0;
+    cx.restore();
+  }
+
+  effects = effects.filter(p => p.life > 0 && p.y < H+60*DPR);
+  for (const p of effects) { stepEffect(p, t); drawEffect(p, t); }
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

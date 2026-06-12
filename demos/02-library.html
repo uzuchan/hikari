@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>02 宇宙図書館</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="幻想的な宇宙の図書館を歩く。透明の階段、浮遊する本、白い妖精の遊び場。部屋を暗くして遊ぶ3D空間。">
+<meta property="og:title" content="02 宇宙図書館 — hikari">
+<meta property="og:description" content="幻想的な宇宙の図書館を歩く。透明の階段、浮遊する本、白い妖精の遊び場。部屋を暗くして遊ぶ3D空間。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+<style>
+  #stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #stage:active { cursor: grabbing; }
+  .keys {
+    display: inline-flex; gap: 4px; margin: 0 4px;
+  }
+  .key {
+    font-size: 10px; letter-spacing: 0.05em; color: var(--glow-white);
+    border: 1px solid rgba(244,242,236,0.3); border-radius: 5px;
+    padding: 2px 7px;
+  }
+</style>
+</head>
+<body data-screen-label="02 宇宙図書館">
+
+<canvas id="stage"></canvas>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 02</div>
+    <div class="hud-title">宇宙図書館</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">
+    <span class="keys"><span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span></span>歩く ／ ドラッグで見回す ／
+    <span class="keys"><span class="key">Space</span></span>浮かぶ・<span class="keys"><span class="key">⇧Shift</span></span>降りる ／ クリックで妖精が集まる
+  </div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Three.js 一人称視点</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">Unity URP / VR (OpenXR)</span></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/three@0.149.0/build/three.min.js"></script>
+<script>
+const cv = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x04040a);
+scene.fog = new THREE.FogExp2(0x04040a, 0.028);
+
+const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 300);
+camera.position.set(0, 1.6, 13);
+
+// ---- 星空 ----
+{
+  const g = new THREE.BufferGeometry(), p = [];
+  for (let i=0;i<1500;i++){ const v=new THREE.Vector3().randomDirection().multiplyScalar(60+Math.random()*120); p.push(v.x, Math.abs(v.y)*0.9-8, v.z); }
+  g.setAttribute('position', new THREE.Float32BufferAttribute(p,3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color:0xf4f2ec, size:0.3, transparent:true, opacity:0.85, fog:false })));
+}
+
+// ---- 床：暗い円盤＋光の輪 ----
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(26, 64),
+  new THREE.MeshStandardMaterial({ color:0x0a0c18, roughness:0.4, metalness:0.6 })
+);
+floor.rotation.x = -Math.PI/2;
+scene.add(floor);
+for (const [r, c, o] of [[8, 0x8ce8ff, 0.5],[16, 0xc9a8ff, 0.3],[24, 0x8ce8ff, 0.2]]) {
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(r-0.06, r+0.06, 128),
+    new THREE.MeshBasicMaterial({ color:c, transparent:true, opacity:o, side:THREE.DoubleSide })
+  );
+  ring.rotation.x = -Math.PI/2;
+  ring.position.y = 0.02;
+  scene.add(ring);
+}
+
+// ---- 本棚の塔（円形配置・InstancedMeshの本）----
+const shelfMat = new THREE.MeshStandardMaterial({ color:0x121420, roughness:0.8 });
+const bookColors = [0xffd98a, 0x8ce8ff, 0xffaad4, 0xc9a8ff, 0xf4f2ec];
+const bookGeo = new THREE.BoxGeometry(0.16, 0.52, 0.1);
+const bookMat = new THREE.MeshBasicMaterial({});
+const NB = 800;
+const books = new THREE.InstancedMesh(bookGeo, bookMat, NB);
+const dummy = new THREE.Object3D();
+let bi = 0;
+const towers = [];
+for (let t=0; t<8; t++) {
+  const ang = t/8 * Math.PI*2;
+  const tx = Math.cos(ang)*18, tz = Math.sin(ang)*18;
+  const h = 9 + Math.random()*5;
+  const shelf = new THREE.Mesh(new THREE.BoxGeometry(3.4, h, 1.1), shelfMat);
+  shelf.position.set(tx, h/2, tz);
+  shelf.lookAt(0, h/2, 0);
+  scene.add(shelf);
+  towers.push(shelf);
+  // 棚板間に本を並べる
+  const rows = Math.floor(h / 0.75);
+  for (let r=0; r<rows; r++) {
+    for (let k=0; k<9 && bi<NB; k++) {
+      dummy.position.set(-1.45 + k*0.36 + (Math.random()-0.5)*0.05, -h/2 + 0.45 + r*0.75, 0.58);
+      dummy.rotation.set(0, (Math.random()-0.5)*0.15, 0);
+      dummy.updateMatrix();
+      const m = dummy.matrix.clone().premultiply(shelf.matrix);
+      books.setMatrixAt(bi, m);
+      books.setColorAt(bi, new THREE.Color(bookColors[Math.floor(Math.random()*bookColors.length)]).multiplyScalar(0.55 + Math.random()*0.45));
+      bi++;
+    }
+  }
+}
+shelfMatUpdate();
+function shelfMatUpdate(){ books.instanceMatrix.needsUpdate = true; if (books.instanceColor) books.instanceColor.needsUpdate = true; }
+scene.add(books);
+
+// ---- 透明の螺旋階段 ----
+const stairMat = new THREE.MeshPhysicalMaterial({
+  color:0x8ce8ff, transparent:true, opacity:0.18, roughness:0.1,
+  emissive:0x8ce8ff, emissiveIntensity:0.35, side:THREE.DoubleSide, depthWrite:false
+});
+const stairs = new THREE.Group();
+for (let i=0; i<46; i++) {
+  const a = i * 0.32;
+  const step = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.07, 0.8), stairMat);
+  step.position.set(Math.cos(a)*4.6, 0.32 + i*0.34, Math.sin(a)*4.6);
+  step.rotation.y = -a + Math.PI/2;
+  stairs.add(step);
+}
+scene.add(stairs);
+
+// ---- 浮遊する本 ----
+const floatBooks = [];
+for (let i=0; i<14; i++) {
+  const c = bookColors[i % bookColors.length];
+  const b = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.7, 0.08),
+    new THREE.MeshBasicMaterial({ color: c, transparent:true, opacity:0.9 })
+  );
+  const a = Math.random()*Math.PI*2, r = 5 + Math.random()*9;
+  b.position.set(Math.cos(a)*r, 2 + Math.random()*9, Math.sin(a)*r);
+  b.userData = { a, r, y: b.position.y, sp: 0.1 + Math.random()*0.2, ph: Math.random()*7 };
+  scene.add(b);
+  floatBooks.push(b);
+}
+
+// ---- 白い妖精（パーティクル）----
+const NF = 160;
+const fairyGeo = new THREE.BufferGeometry();
+const fpos = new Float32Array(NF*3);
+const fairies = [];
+for (let i=0; i<NF; i++) {
+  const p = new THREE.Vector3((Math.random()-0.5)*30, 0.5+Math.random()*12, (Math.random()-0.5)*30);
+  fairies.push({ p, v: new THREE.Vector3(), ph: Math.random()*7 });
+  fpos.set([p.x,p.y,p.z], i*3);
+}
+fairyGeo.setAttribute('position', new THREE.BufferAttribute(fpos, 3));
+const fairyTex = (() => {
+  const c = document.createElement('canvas'); c.width=c.height=64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32,32,2,32,32,30);
+  gr.addColorStop(0,'rgba(255,255,255,1)');
+  gr.addColorStop(0.4,'rgba(255,255,255,0.5)');
+  gr.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=gr; g.fillRect(0,0,64,64);
+  return new THREE.CanvasTexture(c);
+})();
+const fairyPts = new THREE.Points(fairyGeo, new THREE.PointsMaterial({
+  map: fairyTex, size: 0.5, transparent: true, depthWrite: false,
+  blending: THREE.AdditiveBlending, color: 0xffffff
+}));
+scene.add(fairyPts);
+let gatherPoint = null, gatherT = 0, clump = 0;
+
+// ---- 光 ----
+scene.add(new THREE.AmbientLight(0x445077, 0.9));
+const moon = new THREE.PointLight(0xc9d8ff, 1.6, 60);
+moon.position.set(0, 14, 0);
+scene.add(moon);
+
+// ---- 操作 ----
+const keys = {};
+addEventListener('keydown', e => keys[e.code] = true);
+addEventListener('keyup', e => keys[e.code] = false);
+
+// タッチ環境ではヒントをタッチ語彙に差し替える（kbdチップは意味をなさないため）
+if (matchMedia('(pointer: coarse)').matches) {
+  document.querySelector('.hud-hint').textContent =
+    'おしたまま すすむ ／ なぞって みまわす ／ ふれると 妖精があつまる';
+}
+
+// 指1本で tap / hold / drag を判別する：
+//   tap  (短押し・動かない)        → 妖精が集まる（従来どおり）
+//   hold (押したまま・動かない)    → 視線の方へ歩く（タッチの移動手段。HOLD_MS 経過で歩き出す）
+//   drag (押下点から DRAG_PX ずれ) → 見回しに切替（歩行はしない）
+const HOLD_MS = 220;   // これより長い静止ホールドで前進開始（タッチのみ）
+const DRAG_PX = 11;    // 押下点からのずれがこれを超えたらドラッグ＝見回し
+let yaw = 0, pitch = 0, walk = 0;
+let down = false, isTouch = false, mode = 'idle', pid = -1;  // mode: 'press' | 'drag' | 'idle'
+let pressT = 0, sx = 0, sy = 0, lx = 0, ly = 0;
+cv.addEventListener('pointerdown', e => {
+  if (down) return;                       // 2本目の指は無視（1本指の世界）
+  down = true; pid = e.pointerId;
+  isTouch = e.pointerType !== 'mouse';
+  mode = 'press'; pressT = performance.now();
+  sx = lx = e.clientX; sy = ly = e.clientY;
+});
+addEventListener('pointermove', e => {
+  if (!down || e.pointerId !== pid) return;
+  yaw   -= (e.clientX-lx)*0.0042;
+  pitch -= (e.clientY-ly)*0.0042;
+  pitch = Math.max(-1.2, Math.min(1.2, pitch));
+  lx=e.clientX; ly=e.clientY;
+  if (mode === 'press' && Math.hypot(e.clientX-sx, e.clientY-sy) > DRAG_PX) mode = 'drag';
+});
+function release(e, fire) {
+  if (!down || e.pointerId !== pid) return;
+  down = false;
+  const heldMs = performance.now() - pressT;
+  // タップ→妖精が集まる。マウスは従来どおり長さ不問のクリック、タッチは短押しのみ（ホールド歩行と区別）
+  if (fire && mode === 'press' && (!isTouch || heldMs < HOLD_MS)) {
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    gatherPoint = camera.position.clone().add(dir.multiplyScalar(7));
+    gatherT = 200;
+  }
+  mode = 'idle';
+}
+addEventListener('pointerup', e => release(e, true));
+addEventListener('pointercancel', e => release(e, false));
+cv.addEventListener('contextmenu', e => e.preventDefault());  // 長押しメニューで歩行が切れないように
+
+function fit() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+}
+fit();
+addEventListener('resize', fit);
+
+const clock = new THREE.Clock();
+function loop() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  // 移動
+  camera.rotation.set(0,0,0);
+  camera.rotateY(yaw);
+  camera.rotateX(pitch);
+  const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const rgt = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  const sp = 6 * dt;
+  if (keys.KeyW || keys.ArrowUp)    camera.position.addScaledVector(fwd, sp);
+  if (keys.KeyS || keys.ArrowDown)  camera.position.addScaledVector(fwd, -sp);
+  if (keys.KeyA || keys.ArrowLeft)  camera.position.addScaledVector(rgt, -sp);
+  if (keys.KeyD || keys.ArrowRight) camera.position.addScaledVector(rgt, sp);
+  if (keys.Space)      camera.position.y += sp;
+  if (keys.ShiftLeft || keys.ShiftRight) camera.position.y -= sp;
+  // タッチ: 押さえたまま（ホールド）で視線の方へ歩く。上を見上げて押せばゆっくり浮かぶ
+  const walking = down && isTouch && mode === 'press' && (performance.now() - pressT) > HOLD_MS;
+  walk += ((walking ? 1 : 0) - walk) * Math.min(1, dt * 8);   // ふわっと歩き出し・止まる
+  if (walk > 0.01) {
+    const gaze = new THREE.Vector3();
+    camera.getWorldDirection(gaze);
+    camera.position.addScaledVector(gaze, sp * walk);
+  }
+  camera.position.y = Math.max(1.0, Math.min(17, camera.position.y));
+  const rad = Math.hypot(camera.position.x, camera.position.z);
+  if (rad > 24) { camera.position.x *= 24/rad; camera.position.z *= 24/rad; }
+
+  // 浮遊する本
+  for (const b of floatBooks) {
+    b.userData.a += b.userData.sp * dt * 0.4;
+    b.position.x = Math.cos(b.userData.a) * b.userData.r;
+    b.position.z = Math.sin(b.userData.a) * b.userData.r;
+    b.position.y = b.userData.y + Math.sin(t*0.8 + b.userData.ph)*0.4;
+    b.rotation.y += dt*0.3;
+    b.rotation.z = Math.sin(t*0.5 + b.userData.ph)*0.2;
+  }
+
+  // 妖精
+  if (gatherT > 0) gatherT--;
+  const arr = fairyGeo.attributes.position.array;
+  for (let i=0; i<NF; i++) {
+    const f = fairies[i];
+    // ゆらぎ
+    f.v.x += Math.sin(t*1.3 + f.ph*3) * 0.012;
+    f.v.y += Math.cos(t*1.7 + f.ph*2) * 0.010;
+    f.v.z += Math.sin(t*1.1 + f.ph*5) * 0.012;
+    if (gatherT > 60) {
+      const d = gatherPoint.clone().sub(f.p);
+      if (d.length() > 1.2) f.v.addScaledVector(d.normalize(), 0.05); // 近づきすぎない
+    } else if (gatherT > 0 && gatherT < 40) {
+      const d = f.p.clone().sub(gatherPoint);
+      f.v.addScaledVector(d.normalize(), 0.03); // ぱっと散る
+    }
+    f.v.multiplyScalar(0.94);
+    f.p.add(f.v);
+    f.p.y = Math.max(0.3, Math.min(16, f.p.y));
+    arr[i*3]=f.p.x; arr[i*3+1]=f.p.y; arr[i*3+2]=f.p.z;
+  }
+  fairyGeo.attributes.position.needsUpdate = true;
+  // 集合中は加算合成で白飛びしないよう、光を絞る
+  clump += ((gatherT > 50 ? 1 : 0) - clump) * 0.08;
+  fairyPts.material.opacity = 1 - clump * 0.65;
+  fairyPts.material.size = 0.5 - clump * 0.2;
+
+  // 階段がゆっくり明滅
+  stairMat.emissiveIntensity = 0.3 + 0.18*Math.sin(t*1.2);
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

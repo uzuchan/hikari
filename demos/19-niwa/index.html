@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>19 光の庭</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="夜の丘に種を描いて植える、育てて残せる庭。蛍が集まり、音が生まれ、保存した庭はまた咲く。10人がかりの旗艦作。">
+<meta property="og:title" content="19 光の庭 — hikari">
+<meta property="og:description" content="夜の丘に種を描いて植える、育てて残せる庭。蛍が集まり、音が生まれ、保存した庭はまた咲く。10人がかりの旗艦作。">
+<meta property="og:image" content="../../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../../assets/favicon.svg">
+<link rel="stylesheet" href="../../shared.css">
+<style>
+  #stage3d { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #ui-root { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+  #ui-root > * { pointer-events: auto; }
+  #boot-error {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center;
+    color: var(--dim); font-size: 13px; letter-spacing: 0.1em;
+    z-index: 99; text-align: center; line-height: 2;
+  }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.149.0/build/three.module.js" } }
+</script>
+</head>
+<body data-screen-label="19 光の庭">
+
+<canvas id="stage3d"></canvas>
+<div id="ui-root"></div>
+<div id="boot-error"></div>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ---------- 基盤 ----------
+const canvas = document.getElementById('stage3d');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 300);
+camera.position.set(0, 3.2, 9);
+camera.lookAt(0, 0.8, 0);
+
+const world = new THREE.Group();
+scene.add(world);
+
+scene.add(new THREE.AmbientLight(0x223355, 0.32));
+const moonlight = new THREE.DirectionalLight(0xcfe0ff, 0.22);
+moonlight.position.set(-6, 9, -4);
+scene.add(moonlight);
+
+// ---------- イベントバス ----------
+const listeners = {};
+const bus = {
+  on(type, fn) { (listeners[type] ||= []).push(fn); },
+  emit(type, data) {
+    for (const fn of listeners[type] || []) {
+      try { fn(data); } catch (e) { console.warn(`[bus:${type}]`, e); }
+    }
+  }
+};
+
+// ---------- 共有状態 / ヘルパー ----------
+const PALETTE = ['#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
+
+const glowCache = {};
+function glowTexture(color) {
+  if (glowCache[color]) return glowCache[color];
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64, 64, 4, 64, 64, 64);
+  grad.addColorStop(0, color);
+  grad.addColorStop(0.35, color + '88');
+  grad.addColorStop(1, color + '00');
+  g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+  return glowCache[color] = new THREE.CanvasTexture(c);
+}
+
+const ctx = {
+  THREE, scene, camera, renderer, world,
+  dom: { root: document.getElementById('ui-root'), overlay: null },
+  PALETTE, bus,
+  state: {
+    started: false,
+    quality: 1,
+    pointer: { x: 0, y: 0, down: false },
+    wind: 0,
+    plantCount: 0,
+  },
+  helpers: {
+    glowTexture,
+    groundY: () => 0,   // terrain.js が init で差し替える
+  },
+};
+
+// ---------- 入力（正規化ポインタ） ----------
+function setPointer(e) {
+  const p = e.touches ? e.touches[0] : e;
+  ctx.state.pointer.x = (p.clientX / innerWidth) * 2 - 1;
+  ctx.state.pointer.y = -(p.clientY / innerHeight) * 2 + 1;
+}
+addEventListener('pointerdown', e => { ctx.state.pointer.down = true; setPointer(e); });
+addEventListener('pointermove', setPointer);
+addEventListener('pointerup', () => ctx.state.pointer.down = false);
+addEventListener('pointercancel', () => ctx.state.pointer.down = false);
+
+// ---------- リサイズ ----------
+function fit() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+fit();
+addEventListener('resize', fit);
+
+// ---------- モジュール読み込み ----------
+const MODULES = ['terrain', 'weather', 'seasons', 'camera', 'fx', 'plants', 'seeds', 'creatures', 'footprints', 'audio', 'ui'];
+const active = [];
+
+const results = await Promise.allSettled(MODULES.map(m => import(`./js/${m}.js`)));
+const failed = [];
+results.forEach((r, i) => {
+  if (r.status === 'fulfilled' && r.value?.default?.init) {
+    active.push(r.value.default);
+  } else {
+    failed.push(MODULES[i]);
+    console.warn(`module load failed: ${MODULES[i]}`, r.reason);
+  }
+});
+
+for (const m of active) {
+  try { m.init(ctx); } catch (e) { console.warn(`init failed: ${m.name}`, e); }
+}
+
+if (failed.length) {
+  const el = document.getElementById('boot-error');
+  el.style.display = 'flex';
+  el.innerHTML = `庭の一部がまだ眠っています…<br><span style="opacity:.6">${failed.join(' / ')}</span>`;
+  setTimeout(() => el.style.display = 'none', 4000);
+}
+
+// 起動時に保存された庭を読む
+bus.emit('garden:load');
+
+// ---------- メインループ ----------
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  const t = now / 1000;
+  for (const m of active) {
+    if (m.update) { try { m.update(dt, t, ctx); } catch (e) {} }
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

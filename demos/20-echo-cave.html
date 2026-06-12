@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>20 こだまの洞窟</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="闇の奥へ呼びかけると、こだまが光の波紋になって遅れて帰ってくる。返るたびに淡く、深く。">
+<meta property="og:title" content="20 こだまの洞窟 — hikari">
+<meta property="og:description" content="闇の奥へ呼びかけると、こだまが光の波紋になって遅れて帰ってくる。返るたびに淡く、深く。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+<style>
+  #micbar {
+    position: fixed;
+    top: 26px;
+    right: 26px;
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  #level {
+    width: 90px; height: 4px;
+    border-radius: 99px;
+    background: rgba(244,242,236,0.12);
+    overflow: hidden;
+    display: none;
+  }
+  #level i {
+    display: block; height: 100%;
+    width: 0%;
+    background: var(--glow-cyan);
+    box-shadow: 0 0 10px var(--glow-cyan);
+    transition: width 0.08s;
+  }
+</style>
+</head>
+<body data-screen-label="20 こだまの洞窟">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 20</div>
+    <div class="hud-title">こだまの洞窟</div>
+  </div>
+</div>
+
+<div id="micbar">
+  <div id="level"><i></i></div>
+  <button class="action-btn" id="mic">🕯 こだまを呼ぶ</button>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">手をたたくか、画面にふれると、闇の奥からこだまが返ってきます。<br>こだまは返るたびに淡く、低くなります。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas 2D + Web Audio</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">Max・MSP + 投影</span></div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+let W, H, DPR = Math.min(devicePixelRatio, 2);
+
+const PALETTE = ['#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
+
+// ---- 塵スプライト（発光プリレンダ）----
+const dustSprites = {};
+for (const c of PALETTE) {
+  const s = document.createElement('canvas');
+  s.width = s.height = 32;
+  const g = s.getContext('2d');
+  const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, c);
+  gr.addColorStop(0.4, c + '66');
+  gr.addColorStop(1, c + '00');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 32, 32);
+  dustSprites[c] = s;
+}
+
+let dust = [];
+function resize() {
+  W = cv.width = innerWidth * DPR;
+  H = cv.height = innerHeight * DPR;
+  dust = Array.from({ length: 64 }, () => ({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    r: (3 + Math.random() * 7) * DPR,
+    vy: -(0.04 + Math.random() * 0.12) * DPR,
+    c: PALETTE[Math.floor(Math.random() * PALETTE.length)],
+    ph: Math.random() * 7,
+  }));
+}
+resize();
+addEventListener('resize', resize);
+
+// 洞窟の喉（こだまが帰ってくる奥）。画面中央のやや上。
+const throat = () => ({ x: W * 0.5, y: H * 0.36 });
+
+// ---- 波紋（呼び声とこだま）----
+let rings = [];     // {x,y,r,maxR,speed,c,alpha0,width,born}
+let pending = [];   // {at, fn} … 遅れて返るこだまの予定
+
+function ring(x, y, maxR, c, alpha0, width) {
+  rings.push({ x, y, r: 6 * DPR, maxR, speed: (maxR / 80), c, alpha0, width, born: performance.now() });
+}
+
+// ---- 音（こだまのピング）----
+let ac = null, master = null;
+function ensureAudio() {
+  if (ac) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    ac = new AC();
+    if (ac.state === 'suspended') ac.resume().catch(() => {});
+    master = ac.createGain();
+    master.gain.value = 0.22;
+    // 奥行きのためのやわらかいローパス
+    const lp = ac.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 3200;
+    master.connect(lp);
+    lp.connect(ac.destination);
+  } catch (e) { ac = null; }
+}
+function ping(freq, vol, when) {
+  if (!ac || !master) return;
+  try {
+    const t0 = ac.currentTime + Math.max(0, when);
+    const o = ac.createOscillator();
+    o.type = 'sine';
+    o.frequency.value = freq;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.001, vol), t0 + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.8);
+    o.connect(g); g.connect(master);
+    o.start(t0); o.stop(t0 + 0.9);
+    o.onended = () => { try { o.disconnect(); g.disconnect(); } catch (_) {} };
+  } catch (e) { /* 音は飾り。失敗しても黙って続行 */ }
+}
+
+// Aマイナーペンタトニック寄せ（こだまの音程）
+const SEMI = [0, 3, 5, 7, 10, 12, 15];
+function snapFreq(k) { // k: 0..1
+  const i = Math.max(0, Math.min(SEMI.length - 1, Math.floor(k * SEMI.length)));
+  return 330 * Math.pow(2, SEMI[i] / 12);
+}
+
+// ---- 呼び声 → こだまの連鎖 ----
+let lastCallAt = 0;
+function call(x, y, strength, pitchK) {
+  const now = performance.now();
+  if (now - lastCallAt < 260) return;   // 連打クールダウン
+  lastCallAt = now;
+  ensureAudio();
+
+  const s = Math.max(0.25, Math.min(1, strength));
+  const ci = Math.max(0, Math.min(PALETTE.length - 1, Math.floor(pitchK * (PALETTE.length - 1))));
+  const baseF = snapFreq(pitchK);
+
+  // 呼び声: その場に明るいひと波
+  ring(x, y, (150 + 240 * s) * DPR, PALETTE[ci], 0.85, 2.6 * DPR);
+  ping(baseF, 0.12 * s, 0);
+
+  // こだま: 喉に近い点から、遅れて・淡く・低く帰ってくる
+  const T = throat();
+  const n = 2 + Math.round(s * 2);            // 2〜4 回
+  for (let i = 1; i <= n; i++) {
+    const k = i / (n + 0.4);                  // 奥行き 0..1
+    const ex = x + (T.x - x) * k + (Math.random() - 0.5) * 60 * DPR;
+    const ey = y + (T.y - y) * k + (Math.random() - 0.5) * 40 * DPR;
+    const delay = 700 * i + Math.random() * 180;
+    const fade = Math.pow(0.7, i);
+    const c = PALETTE[(ci + i) % PALETTE.length];
+    pending.push({
+      at: now + delay,
+      fn: () => ring(ex, ey, (130 + 200 * s) * (1 - k * 0.55) * DPR, c, 0.72 * fade + 0.12, 2.2 * DPR),
+    });
+    ping(baseF * Math.pow(2, -2 * i / 12), 0.1 * s * fade, delay / 1000);
+  }
+}
+
+// ---- 入力: タップ／クリック（マイクなしでも全部遊べる）----
+addEventListener('pointerdown', e => {
+  if (e.target.closest && e.target.closest('#micbar, .hud-top, .hud-bottom')) return;
+  const x = e.clientX * DPR, y = e.clientY * DPR;
+  call(x, y, 0.75, 1 - e.clientY / innerHeight);   // 画面の高い場所ほど高い声
+});
+
+// ---- 入力: マイク（手拍子・声の立ち上がりを呼び声にする）----
+let analyser = null, micData = null, micActive = false;
+let ema = 0;
+const levelBar = document.querySelector('#level i');
+const micBtn = document.getElementById('mic');
+
+micBtn.addEventListener('click', async () => {
+  if (micActive) return;
+  ensureAudio();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (!ac) throw new Error('no AudioContext');
+    const src = ac.createMediaStreamSource(stream);
+    analyser = ac.createAnalyser();
+    analyser.fftSize = 512;
+    micData = new Uint8Array(analyser.frequencyBinCount);
+    src.connect(analyser);              // destination へは繋がない（ハウリング防止）
+    micActive = true;
+    micBtn.textContent = '🕯 こだまを待っている …';
+    document.getElementById('level').style.display = 'block';
+  } catch (e) {
+    micBtn.textContent = 'マイクは使えないみたい';
+    setTimeout(() => { micBtn.textContent = '🕯 こだまを呼ぶ'; }, 2400);
+  }
+});
+
+let lastMicCall = 0;
+function readMic() {
+  if (!micActive || !analyser) return;
+  analyser.getByteFrequencyData(micData);
+  let sum = 0, wsum = 0, total = 0;
+  for (let i = 2; i < micData.length; i++) {
+    const v = micData[i];
+    sum += v;
+    wsum += v * i;
+    total += v;
+  }
+  const lvl = Math.min(1, sum / micData.length / 140);
+  if (levelBar) levelBar.style.width = (lvl * 100).toFixed(0) + '%';
+
+  const now = performance.now();
+  // 立ち上がり検出: 移動平均を大きく超えた瞬間だけ「呼び声」
+  if (lvl > 0.14 && lvl > ema * 1.65 && now - lastMicCall > 380) {
+    lastMicCall = now;
+    const centroid = total > 0 ? (wsum / total) / micData.length : 0.4;  // 0..1 高さの気配
+    call(W * 0.5, H * 0.78, Math.min(1, lvl * 1.6), Math.min(1, centroid * 1.8));
+  }
+  ema += (lvl - ema) * (lvl > ema ? 0.25 : 0.05);
+}
+
+// ---- 描画 ----
+function drawCave() {
+  // 奥へ吸い込まれる静かなグラデーション（洞窟の喉）
+  const T = throat();
+  const g = cx.createRadialGradient(T.x, T.y, 0, T.x, T.y, Math.max(W, H) * 0.75);
+  g.addColorStop(0, 'rgba(4,4,8,0)');
+  g.addColorStop(0.55, 'rgba(10,10,15,0.0)');
+  g.addColorStop(1, 'rgba(16,15,24,0.16)');
+  cx.fillStyle = g;
+  cx.fillRect(0, 0, W, H);
+}
+
+function loop(t) {
+  cx.fillStyle = 'rgba(8,8,14,0.26)';
+  cx.fillRect(0, 0, W, H);
+  drawCave();
+  readMic();
+
+  // 予定されたこだまを起こす
+  const now = performance.now();
+  for (let i = pending.length - 1; i >= 0; i--) {
+    if (now >= pending[i].at) { pending[i].fn(); pending.splice(i, 1); }
+  }
+
+  // 塵 — 洞窟の呼吸
+  for (const d of dust) {
+    d.y += d.vy;
+    d.x += Math.sin(t * 0.0004 + d.ph) * 0.12 * DPR;
+    if (d.y < -20) { d.y = H + 20; d.x = Math.random() * W; }
+    const a = 0.10 + 0.10 * Math.sin(t * 0.0016 + d.ph);
+    cx.globalAlpha = a;
+    cx.drawImage(dustSprites[d.c], d.x - d.r, d.y - d.r, d.r * 2, d.r * 2);
+  }
+  cx.globalAlpha = 1;
+
+  // 波紋
+  rings = rings.filter(r => r.r < r.maxR);
+  for (const r of rings) {
+    r.r += r.speed * DPR;
+    const k = r.r / r.maxR;
+    const a = r.alpha0 * (1 - k) * (1 - k);
+    if (a <= 0.004) continue;
+    cx.beginPath();
+    cx.arc(r.x, r.y, r.r, 0, 7);
+    cx.strokeStyle = r.c;
+    cx.globalAlpha = a;
+    cx.lineWidth = r.width * (1 - k * 0.6);
+    cx.shadowColor = r.c;
+    cx.shadowBlur = 18 * DPR * (1 - k);
+    cx.stroke();
+    // 波の芯のほのかな灯
+    if (k < 0.25) {
+      cx.globalAlpha = a * 0.5;
+      cx.drawImage(dustSprites[r.c], r.x - 14 * DPR, r.y - 14 * DPR, 28 * DPR, 28 * DPR);
+    }
+  }
+  cx.globalAlpha = 1;
+  cx.shadowBlur = 0;
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// 最初にひとつ、闇の奥からお手本のこだま
+setTimeout(() => { call(W * 0.5, H * 0.7, 0.6, 0.6); }, 900);
+</script>
+</body>
+</html>

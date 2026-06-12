@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>15 渡り鳥の手紙</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="スワイプから生まれた光の鳥が境界を越え、とおくの空で星の手紙になる。ふたつの端末をひとつの夜が繋ぐ。">
+<meta property="og:title" content="15 渡り鳥の手紙 — hikari">
+<meta property="og:description" content="スワイプから生まれた光の鳥が境界を越え、とおくの空で星の手紙になる。ふたつの端末をひとつの夜が繋ぐ。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+<style>
+  /* 2端末の見立て: 左右の空のラベル */
+  .sky-label {
+    position: fixed;
+    top: 96px;
+    transform: translateX(-50%);
+    font-family: var(--serif);
+    font-size: 12px;
+    letter-spacing: 0.34em;
+    color: var(--dimmer);
+    pointer-events: none;
+    z-index: 5;
+    text-shadow: 0 0 16px rgba(244, 242, 236, 0.18);
+    white-space: nowrap;
+  }
+  .sky-label small {
+    display: block;
+    margin-top: 6px;
+    font-family: var(--sans);
+    font-size: 9px;
+    letter-spacing: 0.26em;
+    color: rgba(244, 242, 236, 0.18);
+    text-align: center;
+  }
+  .sky-left  { left: 25%; }
+  .sky-right { left: 75%; }
+  /* スマホ縦: 左ラベルがHUDタイトル直下に重なって窮屈なため、一段下げて呼吸をつくる */
+  @media (max-width: 640px) {
+    .sky-label { top: 148px; }
+  }
+</style>
+</head>
+<body data-screen-label="15 渡り鳥の手紙">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="sky-label sky-left">あなたの空<small>DEVICE A</small></div>
+<div class="sky-label sky-right">とおくの空<small>DEVICE B</small></div>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 15</div>
+    <div class="hud-title">渡り鳥の手紙</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">左の「あなたの空」で指を走らせると、軌跡から光の渡り鳥が生まれます。<br>群れは境界を越えて、とおくの空で星座の手紙になります。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas 2D（1画面で擬似再現）</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">Swift + WebSocket + 投影</span></div>
+  </div>
+</div>
+
+<script>
+// ---- 土台: DPR対応キャンバス & ループ ----
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+const DPR = Math.min(devicePixelRatio, 2);
+let W, H, MID;
+
+const PALETTE = ['#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
+
+// ---- 星空（両方の空に静かに瞬く） ----
+let stars = [];
+function resize() {
+  W = cv.width = innerWidth * DPR;
+  H = cv.height = innerHeight * DPR;
+  MID = W / 2;
+  stars = Array.from({ length: 170 }, () => ({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    r: (0.4 + Math.random() * 1.1) * DPR,
+    ph: Math.random() * 7,
+    sp: 0.0008 + Math.random() * 0.0018
+  }));
+}
+resize();
+addEventListener('resize', resize);
+
+// ---- 手紙のかたち（正規化ポリライン -1..1） ----
+function shapeHeart() {
+  const pts = [];
+  for (let i = 0; i <= 40; i++) {
+    const t = (i / 40) * Math.PI * 2;
+    pts.push({
+      x: 16 * Math.pow(Math.sin(t), 3) / 17,
+      y: -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 17
+    });
+  }
+  return pts;
+}
+function shapeStar() {
+  const pts = [];
+  for (let i = 0; i <= 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5;
+    const r = i % 2 === 0 ? 1 : 0.42;
+    pts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
+  }
+  return pts;
+}
+function shapeMoon() {
+  const pts = [];
+  for (let i = 0; i <= 22; i++) { // 外弧
+    const a = -Math.PI * 0.62 + (i / 22) * Math.PI * 1.24;
+    pts.push({ x: Math.cos(a), y: Math.sin(a) });
+  }
+  for (let i = 22; i >= 0; i--) { // 内弧
+    const a = -Math.PI * 0.62 + (i / 22) * Math.PI * 1.24;
+    pts.push({ x: Math.cos(a) * 0.62 + 0.34, y: Math.sin(a) * 0.62 });
+  }
+  return pts;
+}
+function shapeEnvelope() { // 封筒のグリフ
+  return [
+    { x: -1, y: -0.62 }, { x: 1, y: -0.62 }, { x: 1, y: 0.62 },
+    { x: -1, y: 0.62 }, { x: -1, y: -0.62 }, { x: 0, y: 0.28 }, { x: 1, y: -0.62 }
+  ];
+}
+function shapeWave() { // ささやきの波形
+  const pts = [];
+  for (let i = 0; i <= 36; i++) {
+    const u = i / 36;
+    pts.push({ x: u * 2 - 1, y: Math.sin(u * Math.PI * 3) * 0.5 });
+  }
+  return pts;
+}
+const SHAPES = [shapeHeart, shapeStar, shapeMoon, shapeEnvelope, shapeWave];
+let shapeIdx = Math.floor(Math.random() * SHAPES.length);
+
+// ポリラインを n 点に等間隔リサンプリング
+function resample(pts, n) {
+  const d = [0];
+  let L = 0;
+  for (let i = 1; i < pts.length; i++) {
+    L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    d.push(L);
+  }
+  if (L === 0) return Array.from({ length: n }, () => ({ x: pts[0].x, y: pts[0].y }));
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    const target = L * k / Math.max(1, n - 1);
+    let i = 1;
+    while (i < d.length - 1 && d[i] < target) i++;
+    const t = (target - d[i - 1]) / ((d[i] - d[i - 1]) || 1);
+    out.push({
+      x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+      y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t
+    });
+  }
+  return out;
+}
+
+// ---- 入力: 左の空でスワイプ → 軌跡を記録 ----
+let trail = [], drawing = false;
+addEventListener('pointerdown', e => {
+  const x = e.clientX * DPR, y = e.clientY * DPR;
+  if (x < MID) { drawing = true; trail = [{ x, y }]; }
+});
+addEventListener('pointermove', e => {
+  if (!drawing) return;
+  const x = Math.min(e.clientX * DPR, MID - 8 * DPR), y = e.clientY * DPR;
+  const last = trail[trail.length - 1];
+  if (Math.hypot(x - last.x, y - last.y) > 7 * DPR) {
+    trail.push({ x, y });
+    if (trail.length > 90) trail.shift();
+  }
+});
+addEventListener('pointerup', () => {
+  if (drawing && trail.length >= 3) spawnFlock(trail);
+  drawing = false;
+  trail = [];
+});
+
+// ---- 渡り鳥の群れ ----
+let flocks = [];   // { birds, state, bornAt, settledAt, c }
+let ripples = [];  // 境界を越えた瞬間の波紋
+
+function spawnFlock(path) {
+  let len = 0;
+  for (let i = 1; i < path.length; i++) len += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+  const n = Math.max(7, Math.min(16, Math.round(len / (26 * DPR))));
+  const starts = resample(path, n);
+
+  // とおくの空に手紙の置き場所を決める
+  const half = W - MID;
+  const size = Math.min(half, H) * (0.16 + Math.random() * 0.07);
+  const ox = MID + half * (0.3 + Math.random() * 0.4);
+  const oy = H * (0.26 + Math.random() * 0.4);
+  const shape = SHAPES[shapeIdx % SHAPES.length]();
+  shapeIdx++;
+  const targets = resample(shape, n).map(p => ({ x: ox + p.x * size, y: oy + p.y * size }));
+
+  const c = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+  const birds = starts.map((s, i) => ({
+    x: s.x, y: s.y,
+    vx: (2 + Math.random()) * DPR, vy: (Math.random() - 0.5) * 1.4 * DPR,
+    tx: targets[i].x, ty: targets[i].y,
+    c: Math.random() < 0.8 ? c : '#f4f2ec',
+    ph: Math.random() * 7,
+    settled: false, crossed: false
+  }));
+  flocks.push({ birds, state: 'fly', bornAt: performance.now(), settledAt: 0, c });
+
+  // 群れが増えすぎたら古い手紙から夜空へ還す
+  const alive = flocks.filter(f => f.state !== 'fade');
+  if (alive.length > 4) {
+    const oldest = alive[0];
+    oldest.state = 'fade';
+    oldest.settledAt = performance.now() - LETTER_DUR;
+  }
+}
+
+const LETTER_DUR = 9000;  // 手紙が灯っている時間
+const FADE_DUR = 2600;    // 夜空へ溶ける時間
+
+function drawBird(b, t, alpha) {
+  const ang = Math.atan2(b.vy, b.vx);
+  const flap = Math.sin(t * 0.018 + b.ph) * 0.55;
+  const s = 5 * DPR;
+  cx.save();
+  cx.translate(b.x, b.y);
+  cx.rotate(ang);
+  cx.globalAlpha = alpha;
+  cx.strokeStyle = b.c;
+  cx.shadowColor = b.c;
+  cx.shadowBlur = 11 * DPR;
+  cx.lineWidth = 1.5 * DPR;
+  cx.lineCap = 'round';
+  cx.beginPath(); // 前方を向く山形のつばさ
+  cx.moveTo(-s * 1.15, -s * (0.55 + flap));
+  cx.quadraticCurveTo(-s * 0.25, 0, 0, 0);
+  cx.quadraticCurveTo(-s * 0.25, 0, -s * 1.15, s * (0.55 + flap));
+  cx.stroke();
+  cx.fillStyle = '#fffbe8';
+  cx.beginPath();
+  cx.arc(0, 0, 1.3 * DPR, 0, 7);
+  cx.fill();
+  cx.restore();
+  cx.globalAlpha = 1;
+  cx.shadowBlur = 0;
+}
+
+function drawSettledStar(b, t, i, flock, alpha) {
+  const tw = 0.55 + 0.45 * Math.sin(t * 0.004 + i * 0.9);
+  // 手紙のきらめき: 光が点から点へ走る
+  const sweep = Math.floor(((t - flock.settledAt) / 130) % flock.birds.length);
+  const hot = i === sweep ? 1 : 0;
+  const r = (1.8 + tw * 1.2 + hot * 1.6) * DPR;
+  cx.globalAlpha = alpha * (0.55 + 0.45 * tw + hot * 0.4);
+  cx.fillStyle = hot ? '#fffbe8' : b.c;
+  cx.shadowColor = b.c;
+  cx.shadowBlur = (10 + hot * 10) * DPR;
+  cx.beginPath();
+  cx.arc(b.x, b.y, r, 0, 7);
+  cx.fill();
+  // 四芒のまたたき
+  if (tw > 0.82 || hot) {
+    const L = r * 3;
+    cx.strokeStyle = b.c;
+    cx.lineWidth = 0.7 * DPR;
+    cx.globalAlpha = alpha * 0.5;
+    cx.beginPath();
+    cx.moveTo(b.x - L, b.y); cx.lineTo(b.x + L, b.y);
+    cx.moveTo(b.x, b.y - L); cx.lineTo(b.x, b.y + L);
+    cx.stroke();
+  }
+  cx.globalAlpha = 1;
+  cx.shadowBlur = 0;
+}
+
+// ---- 描画ループ ----
+function loop(t) {
+  // 残光を残す暗転
+  cx.fillStyle = 'rgba(8,8,14,0.24)';
+  cx.fillRect(0, 0, W, H);
+
+  // 星空
+  for (const s of stars) {
+    const a = 0.18 + 0.32 * (0.5 + 0.5 * Math.sin(t * s.sp * 4 + s.ph));
+    cx.globalAlpha = a;
+    cx.fillStyle = '#f4f2ec';
+    cx.beginPath();
+    cx.arc(s.x, s.y, s.r, 0, 7);
+    cx.fill();
+  }
+  cx.globalAlpha = 1;
+
+  // 中央の境界線（2つの端末のあわい）
+  const shimmer = 0.10 + 0.05 * Math.sin(t * 0.0011);
+  const grad = cx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, 'rgba(140,232,255,0)');
+  grad.addColorStop(0.5, `rgba(140,232,255,${shimmer})`);
+  grad.addColorStop(1, 'rgba(140,232,255,0)');
+  cx.strokeStyle = grad;
+  cx.lineWidth = 1 * DPR;
+  cx.beginPath();
+  cx.moveTo(MID, 0);
+  cx.lineTo(MID, H);
+  cx.stroke();
+
+  // 境界を渡った波紋
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const r = ripples[i];
+    r.r += 1.6 * DPR;
+    r.a *= 0.93;
+    cx.globalAlpha = r.a;
+    cx.strokeStyle = r.c;
+    cx.shadowColor = r.c;
+    cx.shadowBlur = 8 * DPR;
+    cx.lineWidth = 1 * DPR;
+    cx.beginPath();
+    cx.arc(MID, r.y, r.r, 0, 7);
+    cx.stroke();
+    cx.shadowBlur = 0;
+    if (r.a < 0.03) ripples.splice(i, 1);
+  }
+  cx.globalAlpha = 1;
+
+  // スワイプ中の軌跡（光の筆あと）
+  if (drawing && trail.length > 1) {
+    for (let k = 1; k < trail.length; k++) {
+      const u = k / trail.length;
+      cx.strokeStyle = '#8ce8ff';
+      cx.globalAlpha = u * 0.55;
+      cx.lineWidth = u * 2.4 * DPR;
+      cx.lineCap = 'round';
+      cx.shadowColor = '#8ce8ff';
+      cx.shadowBlur = 10 * DPR;
+      cx.beginPath();
+      cx.moveTo(trail[k - 1].x, trail[k - 1].y);
+      cx.lineTo(trail[k].x, trail[k].y);
+      cx.stroke();
+    }
+    cx.globalAlpha = 1;
+    cx.shadowBlur = 0;
+  }
+
+  // 群れの更新と描画
+  for (let fi = flocks.length - 1; fi >= 0; fi--) {
+    const f = flocks[fi];
+    let alpha = 1;
+    if (f.state === 'fade') {
+      const k = (t - f.settledAt - LETTER_DUR) / FADE_DUR;
+      alpha = Math.max(0, 1 - k);
+      if (alpha <= 0) { flocks.splice(fi, 1); continue; }
+    }
+
+    let allSettled = true;
+    for (let i = 0; i < f.birds.length; i++) {
+      const b = f.birds[i];
+      if (!b.settled) {
+        allSettled = false;
+        // 目標へ向かう操舵 + ゆらぎ
+        const dx = b.tx - b.x, dy = b.ty - b.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const speed = Math.min(3.4 * DPR, 0.9 * DPR + dist * 0.012);
+        const dvx = dx / dist * speed, dvy = dy / dist * speed;
+        b.vx += (dvx - b.vx) * 0.045 + Math.sin(t * 0.003 + b.ph) * 0.07 * DPR;
+        b.vy += (dvy - b.vy) * 0.045 + Math.cos(t * 0.0024 + b.ph * 1.3) * 0.07 * DPR;
+        const wasLeft = b.x < MID;
+        b.x += b.vx;
+        b.y += b.vy;
+        b.y = Math.max(8 * DPR, Math.min(H - 8 * DPR, b.y));
+        if (wasLeft && b.x >= MID && !b.crossed) { // 境界を渡る
+          b.crossed = true;
+          ripples.push({ y: b.y, r: 2 * DPR, a: 0.7, c: b.c });
+        }
+        if (dist < 6 * DPR) {
+          b.settled = true;
+          b.x = b.tx; b.y = b.ty;
+        }
+        drawBird(b, t, alpha);
+      }
+    }
+
+    if (allSettled && f.state === 'fly') {
+      f.state = 'letter';
+      f.settledAt = t;
+    }
+    if (f.state === 'letter' && t - f.settledAt > LETTER_DUR) f.state = 'fade';
+
+    // 整列した星々 = 光の手紙
+    if (f.state === 'letter' || f.state === 'fade') {
+      // 星座の線
+      cx.globalAlpha = alpha * (0.14 + 0.06 * Math.sin(t * 0.002));
+      cx.strokeStyle = f.c;
+      cx.lineWidth = 0.8 * DPR;
+      cx.beginPath();
+      for (let i = 0; i < f.birds.length; i++) {
+        const b = f.birds[i];
+        if (i === 0) cx.moveTo(b.x, b.y);
+        else cx.lineTo(b.x, b.y);
+      }
+      cx.stroke();
+      cx.globalAlpha = 1;
+      for (let i = 0; i < f.birds.length; i++) drawSettledStar(f.birds[i], t, i, f, alpha);
+    } else {
+      // 飛行中でも settle 済みの個体は星として待つ
+      for (let i = 0; i < f.birds.length; i++) {
+        if (f.birds[i].settled) drawSettledStar(f.birds[i], t, i, { settledAt: t, birds: f.birds }, alpha);
+      }
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// 最初にお手本の群れをひとつ飛ばす
+setTimeout(() => {
+  const demo = [];
+  for (let i = 0; i <= 14; i++) {
+    const u = i / 14;
+    demo.push({
+      x: MID * (0.16 + u * 0.6),
+      y: H * (0.62 - Math.sin(u * Math.PI) * 0.22)
+    });
+  }
+  spawnFlock(demo);
+}, 900);
+</script>
+</body>
+</html>

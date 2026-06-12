@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>05 群れと踊る鏡</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="カメラがあなたの動きを捉え、光の蝶の群れが集まり、驚いて散る。体ぜんぶがコントローラー。">
+<meta property="og:title" content="05 群れと踊る鏡 — hikari">
+<meta property="og:description" content="カメラがあなたの動きを捉え、光の蝶の群れが集まり、驚いて散る。体ぜんぶがコントローラー。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+<style>
+  #cam-btn { position: fixed; top: 26px; right: 26px; z-index: 12; }
+  video { display: none; }
+</style>
+</head>
+<body data-screen-label="05 群れと踊る鏡">
+
+<canvas id="cv" class="stage"></canvas>
+<video id="vid" playsinline muted></video>
+<button class="action-btn" id="cam-btn">📷 カメラで踊る</button>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 05</div>
+    <div class="hud-title">群れと踊る鏡</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">カメラの前でゆっくり動くと光の蝶が集まり、素早く動くと驚いて散ります。<br>カメラがなければ、指先やマウスの動きに群れが反応します。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas + Webカメラ差分</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">Unity + Azure Kinect</span><span class="tech-tag">MediaPipe</span></div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+let W, H, DPR = Math.min(devicePixelRatio, 2);
+function resize() { W = cv.width = innerWidth*DPR; H = cv.height = innerHeight*DPR; }
+resize();
+addEventListener('resize', resize);
+
+const PALETTE = ['#8ce8ff', '#ffd98a', '#ffaad4', '#c9a8ff', '#f4f2ec'];
+
+// ---- モーション検出 ----
+const GW = 48, GH = 27;
+const sample = document.createElement('canvas');
+sample.width = GW; sample.height = GH;
+const scx = sample.getContext('2d', { willReadFrequently: true });
+let prevFrame = null;
+let motion = new Float32Array(GW*GH);
+let camOn = false;
+const vid = document.getElementById('vid');
+
+document.getElementById('cam-btn').addEventListener('click', async () => {
+  try {
+    vid.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 180 } });
+    await vid.play();
+    camOn = true;
+    document.getElementById('cam-btn').style.display = 'none';
+  } catch (e) {
+    document.getElementById('cam-btn').textContent = 'カメラ不可 — 指先かマウスで遊んでね';
+  }
+});
+
+let motionEnergy = 0, attractor = null;
+
+function readMotion() {
+  if (!camOn || vid.readyState < 2) return;
+  // 鏡像
+  scx.save();
+  scx.scale(-1, 1);
+  scx.drawImage(vid, -GW, 0, GW, GH);
+  scx.restore();
+  const f = scx.getImageData(0, 0, GW, GH).data;
+  if (prevFrame) {
+    let sum = 0, mx = 0, my = 0, msum = 0;
+    for (let i = 0; i < GW*GH; i++) {
+      const d = Math.abs(f[i*4]-prevFrame[i*4]) + Math.abs(f[i*4+1]-prevFrame[i*4+1]) + Math.abs(f[i*4+2]-prevFrame[i*4+2]);
+      const m = Math.min(1, d / 110);
+      motion[i] = motion[i]*0.82 + m*0.18;
+      sum += motion[i];
+      if (motion[i] > 0.12) {
+        mx += (i % GW) * motion[i];
+        my += Math.floor(i / GW) * motion[i];
+        msum += motion[i];
+      }
+    }
+    motionEnergy = motionEnergy*0.9 + (sum/(GW*GH))*0.1;
+    attractor = msum > 0.5
+      ? { x: mx/msum/GW*W, y: my/msum/GH*H }
+      : null;
+  }
+  prevFrame = new Uint8ClampedArray(f);
+}
+
+// マウスフォールバック
+let mouse = null, mouseV = 0, lastM = null;
+addEventListener('pointermove', e => {
+  mouse = { x: e.clientX*DPR, y: e.clientY*DPR };
+  if (lastM) mouseV = mouseV*0.85 + Math.hypot(e.clientX-lastM.x, e.clientY-lastM.y)*0.15;
+  lastM = { x: e.clientX, y: e.clientY };
+});
+
+// ---- 蝶（Boids）----
+const N = 110;
+const boids = Array.from({length: N}, () => ({
+  x: Math.random()*innerWidth*DPR, y: Math.random()*innerHeight*DPR,
+  vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2,
+  c: PALETTE[Math.floor(Math.random()*PALETTE.length)],
+  ph: Math.random()*7, sz: (5+Math.random()*5)*DPR
+}));
+
+function flock(t) {
+  const target = camOn ? attractor : mouse;
+  const panic = camOn ? (motionEnergy > 0.09) : (mouseV > 35);
+  for (const b of boids) {
+    let ax = 0, ay = 0, cxn = 0, cyn = 0, sx = 0, sy = 0, n = 0;
+    for (const o of boids) {
+      if (o === b) continue;
+      const dx = o.x-b.x, dy = o.y-b.y, d2 = dx*dx+dy*dy;
+      if (d2 < (90*DPR)**2) {
+        cxn += o.x; cyn += o.y;
+        ax += o.vx; ay += o.vy;
+        n++;
+        if (d2 < (26*DPR)**2) { sx -= dx; sy -= dy; }
+      }
+    }
+    if (n) {
+      b.vx += ((cxn/n - b.x)*0.0012 + (ax/n - b.vx)*0.03);
+      b.vy += ((cyn/n - b.y)*0.0012 + (ay/n - b.vy)*0.03);
+    }
+    b.vx += sx*0.012; b.vy += sy*0.012;
+    if (target) {
+      const dx = target.x-b.x, dy = target.y-b.y, d = Math.hypot(dx,dy)||1;
+      const f = panic ? -0.16 : 0.045;       // 驚くと逃げる
+      b.vx += dx/d*f*DPR; b.vy += dy/d*f*DPR;
+    }
+    // ゆらぎ＋速度制限
+    b.vx += Math.sin(t*0.001+b.ph)*0.03*DPR;
+    b.vy += Math.cos(t*0.0013+b.ph)*0.03*DPR;
+    const sp = Math.hypot(b.vx,b.vy), max = (panic?5.5:2.6)*DPR;
+    if (sp > max) { b.vx = b.vx/sp*max; b.vy = b.vy/sp*max; }
+    b.x += b.vx; b.y += b.vy;
+    const m = 30*DPR;
+    if (b.x < m) b.vx += 0.08*DPR; if (b.x > W-m) b.vx -= 0.08*DPR;
+    if (b.y < m) b.vy += 0.08*DPR; if (b.y > H-m) b.vy -= 0.08*DPR;
+  }
+  mouseV *= 0.96;
+}
+
+function drawButterfly(b, t) {
+  const ang = Math.atan2(b.vy, b.vx);
+  const flap = Math.sin(t*0.02 + b.ph) * 0.85;
+  cx.save();
+  cx.translate(b.x, b.y);
+  cx.rotate(ang + Math.PI/2);
+  cx.shadowColor = b.c;
+  cx.shadowBlur = 12*DPR;
+  cx.fillStyle = b.c;
+  for (const side of [-1, 1]) {
+    cx.save();
+    cx.scale(side * (0.35 + 0.65*Math.abs(flap)), 1);
+    cx.globalAlpha = 0.9;
+    cx.beginPath();
+    cx.ellipse(b.sz*0.7, -b.sz*0.25, b.sz*0.72, b.sz*0.46, -0.5, 0, Math.PI*2);
+    cx.fill();
+    cx.beginPath();
+    cx.ellipse(b.sz*0.55, b.sz*0.32, b.sz*0.5, b.sz*0.33, 0.4, 0, Math.PI*2);
+    cx.fill();
+    cx.restore();
+  }
+  cx.shadowBlur = 0;
+  cx.globalAlpha = 1;
+  cx.fillStyle = '#fffbe8';
+  cx.fillRect(-1*DPR, -b.sz*0.6, 2*DPR, b.sz*1.2);
+  cx.restore();
+}
+
+function loop(t) {
+  readMotion();
+  cx.fillStyle = 'rgba(8,8,15,0.3)';
+  cx.fillRect(0,0,W,H);
+
+  // あなたの「残像」＝モーションマップを淡く描く
+  if (camOn) {
+    for (let i = 0; i < GW*GH; i++) {
+      if (motion[i] < 0.08) continue;
+      const x = (i%GW + 0.5)/GW*W, y = (Math.floor(i/GW) + 0.5)/GH*H;
+      cx.fillStyle = `rgba(244,242,236,${motion[i]*0.16})`;
+      cx.beginPath();
+      cx.arc(x, y, motion[i]*16*DPR, 0, 7);
+      cx.fill();
+    }
+  }
+
+  flock(t);
+  for (const b of boids) drawButterfly(b, t);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>13 光の糸琴</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="張った光の糸をなぞれば、弦が震えて粒をこぼし小さく鳴る。糸はやがて闇に溶ける。">
+<meta property="og:title" content="13 光の糸琴 — hikari">
+<meta property="og:description" content="張った光の糸をなぞれば、弦が震えて粒をこぼし小さく鳴る。糸はやがて闇に溶ける。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+<style>
+  /* デモ固有のスタイルだけここに。共通は shared.css に置く。 */
+</style>
+</head>
+<body data-screen-label="13 光の糸琴">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 13</div>
+    <div class="hud-title">光の糸琴</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">ドラッグして2点のあいだに光の糸を張る。張った糸を横切るようになぞると、弦が震えて小さく鳴る。<br>長い糸は低く、短い糸は高く。糸は時間とともに闇へ溶けていく。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas 2D + Web Audio</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">openFrameworks (C++)</span></div>
+  </div>
+</div>
+
+<script>
+// ---- 土台: DPR対応キャンバス & ループ ----
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+const DPR = Math.min(devicePixelRatio, 2);
+let W, H;
+function resize() {
+  W = cv.width = innerWidth * DPR;
+  H = cv.height = innerHeight * DPR;
+}
+resize();
+addEventListener('resize', resize);
+
+const PALETTE = ['#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
+
+// ---- 音: AudioContext はユーザー操作起点で生成 ----
+let ac = null, master = null;
+function ensureAudio() {
+  if (ac) { if (ac.state === 'suspended') ac.resume().catch(() => {}); return; }
+  try {
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    master = ac.createGain();
+    master.gain.value = 0.5;
+    master.connect(ac.destination);
+  } catch (e) { ac = null; } // 音が出なくても視覚だけで成立させる
+}
+
+// A マイナーペンタトニック。長い糸ほど低い段へ
+const SCALE = [220, 261.63, 293.66, 329.63, 392, 440, 523.25, 587.33, 659.25, 783.99];
+function pitchFor(len) {
+  const lo = 60 * DPR, hi = Math.hypot(W, H) * 0.75;
+  const n = Math.max(0, Math.min(1, (len - lo) / (hi - lo)));
+  return SCALE[Math.round((1 - n) * (SCALE.length - 1))];
+}
+
+function pluckSound(freq, strength) {
+  if (!ac) return;
+  const t0 = ac.currentTime;
+  const v = 0.025 + 0.05 * strength;          // 控えめな音量
+  for (const [mult, ratio, dur] of [[1, 1, 1.4], [2, 0.28, 0.7]]) {
+    const o = ac.createOscillator();
+    o.type = 'sine';
+    o.frequency.value = freq * mult;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(v * ratio, t0 + 0.008);   // 短いアタック
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);   // 弦らしい減衰
+    o.connect(g); g.connect(master);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+}
+
+// ---- 糸（弦）と粒 ----
+let strings = [];   // {ax,ay,bx,by,len,nx,ny,color,freq,amp,omega,phase,pluckU,life,lastPluck}
+let sparks = [];    // {x,y,vx,vy,life,max,r,c}
+const LIFE_SEC = 20;          // 糸が闇へ溶けるまで
+const MAX_STRINGS = 14;
+
+function addString(ax, ay, bx, by) {
+  const len = Math.hypot(bx - ax, by - ay);
+  if (len < 36 * DPR) return;
+  const freq = pitchFor(len);
+  strings.push({
+    ax, ay, bx, by, len,
+    nx: -(by - ay) / len, ny: (bx - ax) / len,   // 法線（振動方向）
+    color: PALETTE[Math.floor(Math.random() * 4)], // 白以外から
+    freq,
+    amp: 0, omega: 2 * Math.PI * (3.2 + freq / 90), phase: 0, pluckU: 0.5,
+    life: 1, lastPluck: -9999, born: performance.now()
+  });
+  if (strings.length > MAX_STRINGS) strings.shift();
+}
+
+function pluck(s, u, strength, now) {
+  if (now - s.lastPluck < 90) return;   // 連打防止
+  s.lastPluck = now;
+  s.amp = (7 + 9 * strength) * DPR;
+  s.phase = 0;
+  s.pluckU = Math.max(0.12, Math.min(0.88, u));
+  s.life = Math.min(1, s.life + 0.18);  // 鳴るたび少し生き返る
+  pluckSound(s.freq, strength);
+}
+
+// 線分交差: p→p2 が 糸 a→b を横切るか。横切れば糸上の位置 u を返す
+function crossing(px, py, qx, qy, s) {
+  const rX = qx - px, rY = qy - py;
+  const sX = s.bx - s.ax, sY = s.by - s.ay;
+  const den = rX * sY - rY * sX;
+  if (Math.abs(den) < 1e-9) return -1;
+  const t = ((s.ax - px) * sY - (s.ay - py) * sX) / den;
+  const u = ((s.ax - px) * rY - (s.ay - py) * rX) / den;
+  return (t >= 0 && t <= 1 && u >= 0 && u <= 1) ? u : -1;
+}
+
+// ---- 入力（マウス・タッチ統一） ----
+let drag = null;            // {x0,y0,x,y}
+let prev = null;            // 直前のポインタ位置（なぞり判定用）
+function pt(e) { return { x: e.clientX * DPR, y: e.clientY * DPR }; }
+
+addEventListener('pointerdown', e => {
+  ensureAudio();
+  const p = pt(e);
+  drag = { x0: p.x, y0: p.y, x: p.x, y: p.y };
+  prev = p;
+});
+addEventListener('pointermove', e => {
+  const p = pt(e);
+  if (drag) {
+    drag.x = p.x; drag.y = p.y;
+    // なぞりの速さ → 弾く強さ
+    const d = Math.hypot(p.x - prev.x, p.y - prev.y);
+    if (d > 0.5) {
+      const strength = Math.min(1, d / (28 * DPR));
+      const now = performance.now();
+      for (const s of strings) {
+        const u = crossing(prev.x, prev.y, p.x, p.y, s);
+        if (u >= 0) pluck(s, u, strength, now);
+      }
+    }
+  }
+  prev = p;
+});
+addEventListener('pointerup', () => {
+  if (drag) addString(drag.x0, drag.y0, drag.x, drag.y);
+  drag = null;
+});
+addEventListener('pointercancel', () => { drag = null; });
+
+// ---- 描画 ----
+function drawString(s, dt) {
+  // 振動: 正弦波の減衰
+  s.phase += s.omega * dt;
+  s.amp *= Math.exp(-dt * 2.6);
+  s.life -= dt / LIFE_SEC;
+
+  const fadeIn = Math.min(1, (performance.now() - s.born) / 400);
+  const a = Math.max(0, Math.min(1, s.life * 1.6)) * fadeIn;  // 終盤で淡く
+  if (a <= 0) return;
+
+  const vib = s.amp > 0.3 * DPR;
+  const N = vib ? 26 : 1;
+  const osc = Math.sin(s.phase);
+  const osc2 = Math.sin(s.phase * 2);
+
+  cx.lineCap = 'round';
+  cx.shadowColor = s.color;
+  for (let pass = 0; pass < 2; pass++) {
+    cx.shadowBlur = (pass === 0 ? 18 : 5) * DPR;
+    cx.strokeStyle = pass === 0 ? s.color : '#f4f2ec';
+    cx.lineWidth = (pass === 0 ? 2.4 : 0.9) * DPR;
+    cx.globalAlpha = a * (pass === 0 ? 0.9 : 0.65);
+    cx.beginPath();
+    for (let i = 0; i <= N; i++) {
+      const u = i / N;
+      let off = 0;
+      if (vib) {
+        // 基音 + 弾いた位置で偏る第2倍音
+        off = s.amp * (Math.sin(Math.PI * u) * osc
+            + 0.45 * (s.pluckU - 0.5) * 2 * Math.sin(2 * Math.PI * u) * osc2);
+      }
+      const x = s.ax + (s.bx - s.ax) * u + s.nx * off;
+      const y = s.ay + (s.by - s.ay) * u + s.ny * off;
+      i === 0 ? cx.moveTo(x, y) : cx.lineTo(x, y);
+    }
+    cx.stroke();
+  }
+  // 糸の留め（両端の灯）
+  cx.shadowBlur = 10 * DPR;
+  cx.fillStyle = s.color;
+  cx.globalAlpha = a;
+  for (const [x, y] of [[s.ax, s.ay], [s.bx, s.by]]) {
+    cx.beginPath(); cx.arc(x, y, 2.4 * DPR, 0, 7); cx.fill();
+  }
+  cx.shadowBlur = 0;
+  cx.globalAlpha = 1;
+
+  // 震えに合わせて光の粒をこぼす
+  if (vib && s.amp > 1.2 * DPR) {
+    const n = Math.min(3, Math.floor(s.amp / (3 * DPR)) + 1);
+    for (let k = 0; k < n; k++) {
+      if (Math.random() > 0.55) continue;
+      const u = Math.random();
+      const off = s.amp * Math.sin(Math.PI * u) * osc;
+      sparks.push({
+        x: s.ax + (s.bx - s.ax) * u + s.nx * off,
+        y: s.ay + (s.by - s.ay) * u + s.ny * off,
+        vx: s.nx * osc * (0.4 + Math.random()) * 60 * DPR + (Math.random() - 0.5) * 30 * DPR,
+        vy: s.ny * osc * (0.4 + Math.random()) * 60 * DPR + (Math.random() - 0.5) * 30 * DPR + 14 * DPR,
+        life: 0, max: 0.7 + Math.random() * 0.8,
+        r: (0.8 + Math.random() * 1.4) * DPR, c: s.color
+      });
+    }
+  }
+}
+
+function drawSparks(dt) {
+  for (const p of sparks) {
+    p.life += dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 0.985; p.vy = p.vy * 0.985 + 26 * DPR * dt;  // ほんのり落ちる
+    const k = 1 - p.life / p.max;
+    if (k <= 0) continue;
+    cx.globalAlpha = k * 0.9;
+    cx.fillStyle = p.c;
+    cx.shadowColor = p.c;
+    cx.shadowBlur = 8 * DPR;
+    cx.beginPath(); cx.arc(p.x, p.y, p.r * (0.5 + k * 0.5), 0, 7); cx.fill();
+  }
+  cx.globalAlpha = 1;
+  cx.shadowBlur = 0;
+  sparks = sparks.filter(p => p.life < p.max);
+  if (sparks.length > 400) sparks.splice(0, sparks.length - 400);
+}
+
+// ---- ループ ----
+let last = 0;
+function loop(t) {
+  const dt = Math.min(0.05, (t - last) / 1000 || 0.016);
+  last = t;
+
+  // 残光を残す暗転
+  cx.fillStyle = 'rgba(8,8,14,0.28)';
+  cx.fillRect(0, 0, W, H);
+
+  strings = strings.filter(s => s.life > 0);
+  for (const s of strings) drawString(s, dt);
+  drawSparks(dt);
+
+  // 張りかけの糸（ゆらめく仮の線）
+  if (drag) {
+    const sh = Math.sin(t * 0.008) * 0.5 + 0.5;
+    cx.strokeStyle = '#f4f2ec';
+    cx.shadowColor = '#f4f2ec';
+    cx.shadowBlur = 12 * DPR;
+    cx.lineWidth = 1.2 * DPR;
+    cx.globalAlpha = 0.35 + sh * 0.3;
+    cx.setLineDash([6 * DPR, 7 * DPR]);
+    cx.beginPath();
+    cx.moveTo(drag.x0, drag.y0);
+    cx.lineTo(drag.x, drag.y);
+    cx.stroke();
+    cx.setLineDash([]);
+    cx.fillStyle = '#f4f2ec';
+    cx.globalAlpha = 0.8;
+    for (const [x, y] of [[drag.x0, drag.y0], [drag.x, drag.y]]) {
+      cx.beginPath(); cx.arc(x, y, 2.2 * DPR, 0, 7); cx.fill();
+    }
+    cx.shadowBlur = 0;
+    cx.globalAlpha = 1;
+  }
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

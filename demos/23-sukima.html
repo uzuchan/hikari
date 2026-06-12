@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>23 夜のすきま</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="指で夜を削ると、むこうがわの光がこぼれる。すきまは、ゆっくりと閉じていく。">
+<meta property="og:title" content="23 夜のすきま — hikari">
+<meta property="og:description" content="指で夜を削ると、むこうがわの光がこぼれる。すきまは、ゆっくりと閉じていく。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+</head>
+<body data-screen-label="23 夜のすきま">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 23</div>
+    <div class="hud-title">夜のすきま</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">指で夜を削ると、むこうがわの光がこぼれます。<br>すきまは、ゆっくりと閉じていきます。はやく削ると、ひろく開きます。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas 2D</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">openFrameworks (C++) + タッチウォール</span></div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+let W, H, DPR = Math.min(devicePixelRatio, 2);
+
+const PALETTE = ['#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
+
+// ---- むこうがわの光(削った先に見える世界)----
+const blobSprites = PALETTE.map(c => {
+  const s = document.createElement('canvas');
+  s.width = s.height = 256;
+  const g = s.getContext('2d');
+  const gr = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  gr.addColorStop(0, c);
+  gr.addColorStop(0.45, c + '55');
+  gr.addColorStop(1, c + '00');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 256, 256);
+  return s;
+});
+const sparkSprite = (() => {
+  const s = document.createElement('canvas');
+  s.width = s.height = 32;
+  const g = s.getContext('2d');
+  const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, '#fff7df');
+  gr.addColorStop(0.4, '#ffd98a88');
+  gr.addColorStop(1, '#ffd98a00');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 32, 32);
+  return s;
+})();
+
+// 光の層(オフスクリーン)と 夜の層(削られる紙)
+const lightCv = document.createElement('canvas');
+const lx = lightCv.getContext('2d');
+const inkCv = document.createElement('canvas');
+const ix = inkCv.getContext('2d');
+
+let blobs = [], stars = [];
+function resize() {
+  W = cv.width = innerWidth * DPR;
+  H = cv.height = innerHeight * DPR;
+  lightCv.width = inkCv.width = W;
+  lightCv.height = inkCv.height = H;
+  // 夜の紙を張り直す(全面が闇に戻る)
+  ix.globalCompositeOperation = 'source-over';
+  ix.fillStyle = '#0a0a0f';
+  ix.fillRect(0, 0, W, H);
+  // むこうがわの住人たち
+  blobs = [...PALETTE, ...PALETTE].map((c, j) => ({
+    i: j % PALETTE.length,
+    r: (W + H) * (0.15 + Math.random() * 0.12),
+    cx: W * (0.08 + 0.84 * Math.random()),
+    cy: H * (0.08 + 0.84 * Math.random()),
+    orbR: (60 + Math.random() * 160) * DPR,
+    sp: 0.05 + Math.random() * 0.08,
+    ph: Math.random() * 7,
+  }));
+  stars = Array.from({ length: 90 }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    r: (0.6 + Math.random() * 1.3) * DPR,
+    ph: Math.random() * 7,
+  }));
+}
+resize();
+addEventListener('resize', resize);
+
+// ---- 削る(マウス/タッチ統一) ----
+let scratching = false, lastP = null, healFrame = 0;
+let sparks = [];
+function scratchTo(x, y) {
+  const p = { x: x * DPR, y: y * DPR };
+  if (!lastP) lastP = p;
+  const dist = Math.hypot(p.x - lastP.x, p.y - lastP.y);
+  const speed = dist;                                  // 1イベントあたりの移動量
+  const w = Math.min(64, 15 + speed * 0.55) * DPR;     // はやく削るとひろく
+  // 夜の層に「すきま」を開ける(柔らかいブラシで destination-out)
+  ix.globalCompositeOperation = 'destination-out';
+  const steps = Math.max(1, Math.ceil(dist / (w * 0.3)));
+  for (let i = 0; i <= steps; i++) {
+    const k = i / steps;
+    const sx = lastP.x + (p.x - lastP.x) * k;
+    const sy = lastP.y + (p.y - lastP.y) * k;
+    const gr = ix.createRadialGradient(sx, sy, 0, sx, sy, w);
+    gr.addColorStop(0, 'rgba(0,0,0,0.85)');
+    gr.addColorStop(0.6, 'rgba(0,0,0,0.4)');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    ix.fillStyle = gr;
+    ix.beginPath();
+    ix.arc(sx, sy, w, 0, 7);
+    ix.fill();
+  }
+  // 削りかすの光
+  if (dist > 2) {
+    for (let i = 0; i < Math.min(4, 1 + speed * 0.04); i++) {
+      sparks.push({
+        x: p.x + (Math.random() - 0.5) * w * 0.6,
+        y: p.y + (Math.random() - 0.5) * w * 0.6,
+        vx: (Math.random() - 0.5) * 1.4 * DPR,
+        vy: (-0.4 - Math.random() * 1.2) * DPR,
+        life: 1,
+        s: (5 + Math.random() * 9) * DPR,
+      });
+    }
+  }
+  lastP = p;
+}
+addEventListener('pointerdown', e => {
+  if (e.target.closest && e.target.closest('.hud-top, .hud-bottom')) return;
+  scratching = true;
+  lastP = null;
+  scratchTo(e.clientX, e.clientY);
+});
+addEventListener('pointermove', e => { if (scratching) scratchTo(e.clientX, e.clientY); });
+addEventListener('pointerup', () => { scratching = false; lastP = null; });
+addEventListener('pointercancel', () => { scratching = false; lastP = null; });
+
+// ---- ループ ----
+function loop(t) {
+  // 1) むこうがわの光を描く
+  lx.globalCompositeOperation = 'source-over';
+  lx.fillStyle = '#221d3e';                  // 夜の裏側 — ほの明るい群青
+  lx.fillRect(0, 0, W, H);
+  lx.globalCompositeOperation = 'lighter';
+  for (const b of blobs) {
+    const x = b.cx + Math.cos(t * 0.0001 * (1 + b.sp) + b.ph) * b.orbR;
+    const y = b.cy + Math.sin(t * 0.00013 * (1 + b.sp) + b.ph * 1.3) * b.orbR;
+    const breathe = 0.85 + 0.15 * Math.sin(t * 0.0006 + b.ph);
+    lx.globalAlpha = 0.85;
+    lx.drawImage(blobSprites[b.i], x - b.r * breathe, y - b.r * breathe, b.r * 2 * breathe, b.r * 2 * breathe);
+  }
+  lx.globalAlpha = 1;
+  for (const s of stars) {
+    const a = 0.4 + 0.4 * Math.sin(t * 0.0014 + s.ph);
+    lx.globalAlpha = a;
+    lx.fillStyle = '#f4f2ec';
+    lx.beginPath();
+    lx.arc(s.x, s.y, s.r, 0, 7);
+    lx.fill();
+  }
+  lx.globalAlpha = 1;
+
+  // 2) 夜がゆっくり癒える(すきまが閉じる)
+  // 毎フレーム極小αだと8bit量子化で消えるため、8フレームに1回だけ塗る(実効 ~0.09α/秒 → 20〜30秒で閉じる)
+  if ((healFrame = (healFrame + 1) & 7) === 0) {
+    ix.globalCompositeOperation = 'source-over';
+    ix.fillStyle = 'rgba(10,10,15,0.012)';
+    ix.fillRect(0, 0, W, H);
+  }
+
+  // 3) 合成: 光 → その上に夜
+  cx.globalCompositeOperation = 'source-over';
+  cx.drawImage(lightCv, 0, 0);
+  cx.drawImage(inkCv, 0, 0);
+
+  // 4) 削りかす
+  cx.globalCompositeOperation = 'lighter';
+  sparks = sparks.filter(s => s.life > 0);
+  for (const s of sparks) {
+    s.x += s.vx; s.y += s.vy;
+    s.vy += 0.02 * DPR;
+    s.life -= 0.022;
+    cx.globalAlpha = Math.max(0, s.life) * 0.8;
+    cx.drawImage(sparkSprite, s.x - s.s / 2, s.y - s.s / 2, s.s, s.s);
+  }
+  cx.globalAlpha = 1;
+  cx.globalCompositeOperation = 'source-over';
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// 起動の合図: 夜にひとつ、小さなすきまがひらいて閉じる(お手本)
+setTimeout(() => {
+  const cxp = innerWidth / 2, cyp = innerHeight * 0.45;
+  scratching = true; lastP = null;
+  let i = 0;
+  const demo = setInterval(() => {
+    const a = i / 14 * Math.PI * 2;
+    scratchTo(cxp + Math.cos(a) * 60, cyp + Math.sin(a) * 36);
+    if (++i > 14) { clearInterval(demo); scratching = false; lastP = null; }
+  }, 24);
+}, 800);
+</script>
+</body>
+</html>

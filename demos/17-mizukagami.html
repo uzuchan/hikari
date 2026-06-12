@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>17 水鏡の文字</title>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="夜に描いた光の文字が水面に揺らぎ、粒となって波紋に還る。波が収まれば水面はまた鏡になる。">
+<meta property="og:title" content="17 水鏡の文字 — hikari">
+<meta property="og:description" content="夜に描いた光の文字が水面に揺らぎ、粒となって波紋に還る。波が収まれば水面はまた鏡になる。">
+<meta property="og:image" content="../assets/og.png">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../shared.css">
+</head>
+<body data-screen-label="17 水鏡の文字">
+
+<canvas id="cv" class="stage"></canvas>
+
+<div class="hud-top">
+  <div class="hud-title-block">
+    <a class="hud-back" href="../index.html">← もどる</a>
+    <div class="hud-no">PROTOTYPE 17</div>
+    <div class="hud-title">水鏡の文字</div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="hud-hint">上半分の夜の空気に、指で光の文字を描いてください。水面が鏡像を揺らめかせて返します。<br>描き終えた線は光の粒にほどけて水に落ち、波紋がしばらく鏡を歪ませます。</div>
+  <div class="hud-tech">
+    <div class="tech-row"><span class="tech-label">試作</span><span class="tech-tag">Canvas 2D</span></div>
+    <div class="tech-row"><span class="tech-label">本実装</span><span class="tech-tag primary">openFrameworks (C++)</span></div>
+  </div>
+</div>
+
+<script>
+// ---- 土台: DPR対応キャンバス & ループ ----
+const cv = document.getElementById('cv');
+const cx = cv.getContext('2d');
+const DPR = Math.min(devicePixelRatio, 2);
+let W, H, waterY, depthMax;
+
+const PALETTE = ['#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
+
+// 夜空（=映り込む世界）を別キャンバスに描く。これを上下反転して水面に映す。
+const sky = document.createElement('canvas');
+const sk = sky.getContext('2d');
+
+let stars = [];   // 上半分の星
+let glints = [];  // 水面のささやかなきらめき
+function resize() {
+  W = cv.width = innerWidth * DPR;
+  H = cv.height = innerHeight * DPR;
+  sky.width = W; sky.height = H;
+  waterY = Math.round(H * 0.56);
+  depthMax = Math.min(waterY, H - waterY);
+  stars = Array.from({ length: 90 }, () => ({
+    x: Math.random() * W, y: Math.random() * waterY * 0.96,
+    r: (0.4 + Math.random() * 1.1) * DPR,
+    a: 0.08 + Math.random() * 0.3, ph: Math.random() * 7
+  }));
+  glints = Array.from({ length: 60 }, () => ({
+    x: Math.random() * W, y: waterY + Math.random() * (H - waterY),
+    w: (3 + Math.random() * 10) * DPR,
+    a: 0.03 + Math.random() * 0.08, ph: Math.random() * 7
+  }));
+}
+resize();
+addEventListener('resize', resize);
+
+// ---- 状態 ----
+let strokes = [];    // {pts:[{x,y}], c, state:'live'|'held', releasedAt}
+let particles = [];  // 線がほどけた光の粒
+let ripples = [];    // 波紋 {x, r, v, amp, life, c}
+let splashes = [];   // 着水の小さな光
+let drawing = null;  // 描画中ストローク
+let colorIdx = 0;
+
+// ---- 入力（pointerイベント: マウス & タッチ統一） ----
+function pt(e) {
+  return { x: e.clientX * DPR, y: Math.min(e.clientY * DPR, waterY - 6 * DPR) };
+}
+addEventListener('pointerdown', e => {
+  if (e.clientY * DPR >= waterY) return; // 水面より下では描けない
+  drawing = { pts: [pt(e)], c: PALETTE[colorIdx++ % PALETTE.length], state: 'live', releasedAt: 0 };
+  strokes.push(drawing);
+});
+addEventListener('pointermove', e => {
+  if (!drawing) return;
+  const p = pt(e);
+  const last = drawing.pts[drawing.pts.length - 1];
+  if (Math.hypot(p.x - last.x, p.y - last.y) > 3 * DPR) drawing.pts.push(p);
+});
+function release() {
+  if (!drawing) return;
+  drawing.state = 'held';
+  drawing.releasedAt = performance.now();
+  drawing = null;
+}
+addEventListener('pointerup', release);
+addEventListener('pointercancel', release);
+
+// ストローク → 光の粒へほどく
+function dissolve(s) {
+  const pts = s.pts;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const seg = Math.hypot(b.x - a.x, b.y - a.y);
+    const n = Math.max(1, Math.round(seg / (5 * DPR)));
+    for (let j = 0; j < n; j++) {
+      const k = j / n;
+      particles.push({
+        x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k,
+        vx: (Math.random() - 0.5) * 0.5 * DPR,
+        vy: (-0.4 - Math.random() * 0.6) * DPR,
+        c: s.c, ph: Math.random() * 7,
+        delay: i * 1.6 + Math.random() * 18   // 端からほどけていく
+      });
+    }
+  }
+}
+
+// ---- 描画ループ ----
+function loop(t) {
+  // --- 夜空レイヤー: 薄く消して残光をつくり、線と粒を描く ---
+  sk.globalCompositeOperation = 'destination-out';
+  sk.fillStyle = 'rgba(0,0,0,0.16)';
+  sk.fillRect(0, 0, W, waterY);
+  sk.globalCompositeOperation = 'source-over';
+
+  // 線（描画中・保持中は毎フレーム描き直して芯を保つ）
+  for (const s of strokes) {
+    if (s.pts.length < 2) continue;
+    sk.lineCap = sk.lineJoin = 'round';
+    sk.strokeStyle = s.c;
+    sk.shadowColor = s.c;
+    sk.shadowBlur = 14 * DPR;
+    sk.lineWidth = 2.4 * DPR;
+    sk.globalAlpha = 0.95;
+    sk.beginPath();
+    sk.moveTo(s.pts[0].x, s.pts[0].y);
+    for (let i = 1; i < s.pts.length; i++) sk.lineTo(s.pts[i].x, s.pts[i].y);
+    sk.stroke();
+  }
+  sk.globalAlpha = 1;
+  sk.shadowBlur = 0;
+
+  // 描き終えて一拍おいたら、粒へほどく
+  strokes = strokes.filter(s => {
+    if (s.state === 'held' && t - s.releasedAt > 700) { dissolve(s); return false; }
+    return true;
+  });
+
+  // 光の粒：ふわりと浮いてから水へ落ちる
+  particles = particles.filter(p => !p.dead);
+  for (const p of particles) {
+    if (p.delay > 0) { p.delay -= 1; continue; }
+    p.vy += 0.035 * DPR;
+    p.x += p.vx + Math.sin(t * 0.004 + p.ph) * 0.3 * DPR;
+    p.y += p.vy;
+    if (p.y >= waterY) {
+      // 着水 → 波紋
+      if (ripples.length < 40) ripples.push({
+        x: p.x, r: 2 * DPR, v: (1.0 + Math.random() * 0.8) * DPR,
+        amp: (2.5 + Math.random() * 3) * DPR, life: 1, c: p.c
+      });
+      splashes.push({ x: p.x, y: waterY, r: 1.5 * DPR, life: 1, c: p.c });
+      p.dead = true;
+      continue;
+    }
+    const tw = 0.6 + 0.4 * Math.sin(t * 0.01 + p.ph * 5);
+    sk.globalAlpha = tw;
+    sk.fillStyle = p.c;
+    sk.shadowColor = p.c;
+    sk.shadowBlur = 10 * DPR;
+    sk.beginPath();
+    sk.arc(p.x, p.y, 1.6 * DPR, 0, 7);
+    sk.fill();
+  }
+  sk.globalAlpha = 1;
+  sk.shadowBlur = 0;
+
+  // --- 本キャンバス: 夜の空気と水面 ---
+  const bg = cx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#0a0a0f');
+  bg.addColorStop(waterY / H, '#0c0d16');
+  bg.addColorStop(Math.min(1, waterY / H + 0.02), '#080a14');
+  bg.addColorStop(1, '#05060c');
+  cx.fillStyle = bg;
+  cx.fillRect(0, 0, W, H);
+
+  // 星
+  for (const s of stars) {
+    cx.globalAlpha = s.a * (0.5 + 0.5 * Math.sin(t * 0.0012 + s.ph));
+    cx.fillStyle = '#f4f2ec';
+    cx.beginPath(); cx.arc(s.x, s.y, s.r, 0, 7); cx.fill();
+  }
+  cx.globalAlpha = 1;
+
+  // 夜空レイヤー（線・粒）をそのまま上半分へ
+  cx.drawImage(sky, 0, 0);
+
+  // --- 鏡像: 上下反転 + 時間と波紋による横ゆらぎ + 深さで減衰 ---
+  const strip = Math.max(2, Math.round(3 * DPR));
+  const sigma = 26 * DPR;
+  for (let d = 0; d < depthMax - strip; d += strip) {
+    const srcY = waterY - d - strip;
+    if (srcY < 0) break;
+    // 常のゆらぎ（時間）
+    let off = Math.sin(t * 0.0012 + d * 0.02 / DPR) * 1.4 * DPR * (0.35 + d / depthMax);
+    // 波紋によるゆらぎ（波紋の輪がこの深さを通るとき強く歪む）
+    for (const rp of ripples) {
+      const dd = d - rp.r;
+      const env = Math.exp(-(dd * dd) / (2 * sigma * sigma));
+      off += rp.amp * rp.life * env * Math.sin(dd * 0.22 / DPR + t * 0.006);
+    }
+    cx.globalAlpha = 0.42 * (1 - 0.78 * d / depthMax);
+    cx.drawImage(sky, 0, srcY, W, strip, off, waterY + d, W, strip);
+  }
+  cx.globalAlpha = 1;
+
+  // 水のきらめき（横に細いきらり）
+  for (const g of glints) {
+    const a = g.a * (0.5 + 0.5 * Math.sin(t * 0.0018 + g.ph));
+    cx.globalAlpha = a;
+    cx.fillStyle = '#8ce8ff';
+    cx.fillRect(g.x, g.y, g.w, DPR * 0.8);
+  }
+  cx.globalAlpha = 1;
+
+  // 水面の境界線（波紋が近いとほのかに明るむ）
+  let lineGlow = 0.10;
+  for (const rp of ripples) lineGlow += 0.05 * rp.life;
+  cx.globalAlpha = Math.min(0.4, lineGlow);
+  cx.fillStyle = '#f4f2ec';
+  cx.fillRect(0, waterY - DPR * 0.5, W, DPR);
+  cx.globalAlpha = 1;
+
+  // 波紋の輪（水面上の楕円として）
+  ripples = ripples.filter(rp => rp.life > 0.02);
+  for (const rp of ripples) {
+    rp.r += rp.v;
+    rp.life -= 0.0085;
+    cx.globalAlpha = rp.life * 0.5;
+    cx.strokeStyle = rp.c;
+    cx.shadowColor = rp.c;
+    cx.shadowBlur = 8 * DPR;
+    cx.lineWidth = 1.1 * DPR;
+    cx.beginPath();
+    cx.ellipse(rp.x, waterY, rp.r, rp.r * 0.16, 0, 0, Math.PI * 2);
+    cx.stroke();
+  }
+  cx.shadowBlur = 0;
+
+  // 着水のひとしずくの光（沈みながら消える）
+  splashes = splashes.filter(sp => sp.life > 0.03);
+  for (const sp of splashes) {
+    sp.y += 0.4 * DPR;
+    sp.life -= 0.025;
+    cx.globalAlpha = sp.life * 0.8;
+    cx.fillStyle = sp.c;
+    cx.shadowColor = sp.c;
+    cx.shadowBlur = 12 * DPR;
+    cx.beginPath();
+    cx.arc(sp.x, sp.y, sp.r * (1 + (1 - sp.life)), 0, 7);
+    cx.fill();
+  }
+  cx.globalAlpha = 1;
+  cx.shadowBlur = 0;
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
