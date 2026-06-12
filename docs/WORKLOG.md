@@ -8,6 +8,22 @@
 
 ---
 
+## 2026-06-12 昼 — 26作品体制の全体再検分: 全25スイートグリーン
+
+- **体制**: 検査官役=オーケストレータが直列バッチA5〜E5bを連鎖実行→記録係。修繕職人の出動なし(検出ゼロ)。
+- **運用改善**: 個別テストが12本に増え、Eバッチがバックグラウンド実行の10分上限に迫っていたため **E5a(個別回帰5本)/E5b(新作専用テスト7本)に分割** — 以後この分割を標準とする。
+- **再検分の結果**(計**25スクリプト**、結果 `_check/final-audit.log`):
+  - A5: smoke-all(25・26含む全26本 OK)/ mobile-sweep / meta-audit(**27ページ 0 failed**)。
+  - B5: gesture-all(26番まで NO_ERRORS)。
+  - C5: niwa系5本(touch 30/30)。
+  - D5: 音・季節系4本(seasons 13/13・natsu 4/4)。
+  - E5a: planet-mobile / library-touch / hint-audit / mobile-gallery-check / mobile-gallery-scroll。
+  - E5b: echo-cave / furiko / toudai / sukima / shabon / michishio / **shizuka**(新作テスト7本)。
+  - **全25スクリプト exit=0・console/pageerror 全て0。検出ゼロ、修繕不要。**
+- **現在のスタジオの状態**: 公開サイト(https://uzuchan.github.io/hikari.github.io/)+26作品(壱6・弐7・参7・肆6)、検証スイート25本+長時間ソーク2本、メタ27ページ、全グリーン。
+- **未解決の問題**: なし。
+- **次にやること**: ループ継続。次候補: 新作27番(参 or 壱)/ 光の庭の次の拡張 / ライブサイトの定期ヘルスチェック運用。
+
 ## 2026-06-12 昼 — 新作26番「しずかの森」
 
 - **体制**: /new-demo の正規手順でオーケストレータが機能ビルダー役を直接実施(検証スクリプト新設・一発 ALL PASS)→記録係。
