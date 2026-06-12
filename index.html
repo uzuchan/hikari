@@ -204,7 +204,7 @@
   <header class="masthead">
     <div class="masthead-sub">INTERACTIVE STUDY — 10 PROTOTYPES IN A DAY</div>
     <h1>hikari</h1>
-    <p>暗闇に光を灯す、10のインタラクティブ試作。<br>すべてブラウザで動く叩き台 ＋ 本実装の想定技術つき。</p>
+    <p>暗闇に光を灯す、<span id="n-works">25</span>のインタラクティブ試作。<br>すべてブラウザで動く叩き台 ＋ 本実装の想定技術つき。</p>
   </header>
 
   <section class="group" data-screen-label="3D・AR空間">
@@ -358,7 +358,8 @@
 
   <footer class="note">
     各カードを開くとその場で遊べます ／ 部屋を暗くして全画面推奨<br>
-    PROTOTYPED IN HTML — PRODUCTION TARGETS: UNITY (C#) · SWIFT · TOUCHDESIGNER · openFrameworks
+    PROTOTYPED IN HTML — PRODUCTION TARGETS: UNITY (C#) · SWIFT · TOUCHDESIGNER · openFrameworks<br>
+    <a href="https://github.com/uzuchan/hikari.github.io" style="color: inherit; text-decoration: none; letter-spacing: 0.2em;">SOURCE — GITHUB</a>
   </footer>
 </div>
 
@@ -393,6 +394,13 @@
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
+
+// 作品数はカードの実数に追従(文言が古びないように)
+try {
+  const n = document.querySelectorAll('a.card').length;
+  const el = document.getElementById('n-works');
+  if (el && n > 0) el.textContent = n;
+} catch (e) { /* 飾りなので静かに */ }
 </script>
 </body>
 </html>
