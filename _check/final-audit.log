@@ -1,31 +1,4 @@
-[A5] smoke-all.mjs exit=0 :: 25 25-michishio: OK 26 26-shizuka: OK 
-[A5] mobile-sweep.mjs exit=0 ::   "errors": [],   "errors": [], 
-[A5] meta-audit.mjs exit=0 :: OK  /demos/26-shizuka.html  (errors:0, meta:ok, assets:200) 27 pages audited — 0 failed, total console/page errors: 0 
-[A5] DONE
-[B5] gesture-all.mjs exit=0 :: 26: NO_ERRORS 19: NO_ERRORS 
-[B5] DONE
-[C5] niwa-flow.mjs exit=0 :: NO_ERRORS n1/n2/n3 saved 
-[C5] niwa-touch-test.mjs exit=0 :: PASS  C9 タッチターゲット(ui/seeds所有: mini≥40, swatch≥24, けす≥30)  -- all ok RESULT: 30/30 pass, errors=0 
-[C5] garden-letter-test.mjs exit=0 :: ALL PASS 
-[C5] photo-test.mjs exit=0 :: NO_ERRORS 
-[C5] footprints-test.mjs exit=0 :: NO_ERRORS 
-[C5] DONE
-[D5] audio-soundscape-test.mjs exit=0 :: NO_ERRORS n6-soundscape.png saved 
-[D5] seasons-test.mjs exit=0 :: PASS  note: aki の鈴が1回(pitch=0.35, vol=0.15)  -- matched=1 RESULT(soak): 13/13 pass, errors=0 
-[D5] season-audio-test.mjs exit=0 :: NO_ERRORS season-audio.png saved 
-[D5] natsu-check.mjs exit=0 :: PASS  console error / pageerror 0件 RESULT(natsu): 4/4 pass, errors=0 
-[D5] DONE
-[E5a] planet-mobile-test.mjs exit=0 ::   PASS  デスクトップ回帰: 左pad-col(360px) + 右worldの2カラム維持  [pad=360px world.left=360 worldH=800] ALL PASS 
-[E5a] library-touch-test.mjs exit=0 ::   PASS  console/pageerror 0件 ALL PASS 
-[E5a] hint-audit-test.mjs exit=0 ::   PASS  console error 0 (0件) ALL PASS 
-[E5a] mobile-gallery-check.mjs exit=0 ::       "errors": [],       "errors": [], 
-[E5a] mobile-gallery-scroll.mjs exit=0 :: 
-[E5a] DONE
-[E5b] echo-cave-test.mjs exit=0 :: PASS  モバイル縦: タッチtapエラーなし・横はみ出しなし  -- errs=0 overflow=false ALL PASS 
-[E5b] furiko-test.mjs exit=0 :: PASS  モバイル縦: タップエラーなし・はみ出しなし  -- errs=0 over=false ALL PASS 
-[E5b] toudai-test.mjs exit=0 :: PASS  モバイル縦: 指なぞりで光がまわる・はみ出しなし  -- errs=0 over=false mb0=0.702 mb1=2.414 ALL PASS 
-[E5b] sukima-test.mjs exit=0 :: PASS  モバイル縦: 指で削れる・はみ出しなし  -- errs=0 over=false dark=1 lit=440 ALL PASS 
-[E5b] shabon-test.mjs exit=0 :: PASS  モバイル縦: 長押しの息で生まれる・はみ出しなし  -- errs=0 over=false c=1→2 ALL PASS 
-[E5b] michishio-test.mjs exit=0 :: PASS  モバイル縦: 指で月を渡すと潮が入れ替わる・はみ出しなし  -- errs=0 over=false {"a":0.808,"b":0.202}→{"a":0.207,"b":0.6} ALL PASS 
-[E5b] shizuka-test.mjs exit=0 :: PASS  モバイル縦: 指を置いた静止で寄ってくる・はみ出しなし  -- errs=0 over=false {"still":8,"beings":5} ALL PASS 
-[E5b] DONE
+[QA] smoke-all.mjs exit=0 :: 26 26-shizuka: OK 27 27-orgel: OK 
+[QA] gesture-all.mjs exit=0 :: 27: NO_ERRORS 19: NO_ERRORS 
+[QA] mobile-sweep.mjs exit=0 ::   "errors": [],   "errors": [], 
+[QA] DONE

@@ -92,12 +92,13 @@ function rake(from, to) {
       a: Math.random()*Math.PI*2,
       sp: (0.4+Math.random()*0.8)*DPR,
       life: 1, ph: Math.random()*7,
-      c: Math.random() < 0.5 ? '#b8ffc2' : '#8ce8ff'
+      c: Math.random() < 0.5 ? '#c9a8ff' : '#8ce8ff'
     });
   }
 }
 
-addEventListener('pointerdown', e => { raking = true; drawingP = {x: e.clientX*DPR, y: e.clientY*DPR}; });
+let userActive = false;
+addEventListener('pointerdown', e => { userActive = true; raking = true; drawingP = {x: e.clientX*DPR, y: e.clientY*DPR}; });
 addEventListener('pointermove', e => {
   if (!raking) return;
   const p = {x: e.clientX*DPR, y: e.clientY*DPR};
@@ -107,6 +108,27 @@ addEventListener('pointermove', e => {
   }
 });
 addEventListener('pointerup', () => raking = false);
+
+// ---- アトラクト：誰も触れていない間、見えない手が砂紋を引く ----
+function ghostRake() {
+  const y0 = (0.34 + Math.random()*0.34) * H;
+  const x0 = 0.15*W, x1 = 0.85*W;
+  const sag = (0.05 + Math.random()*0.07) * H * (Math.random() < 0.5 ? 1 : -1);
+  const n = 58; let i = 1, prev = { x: x0, y: y0 };
+  (function step() {
+    if (userActive) return;
+    const u = i/(n-1);
+    const p = { x: x0 + (x1-x0)*u, y: y0 + Math.sin(u*Math.PI)*sag };
+    rake(prev, p); prev = p; i++;
+    if (i < n) setTimeout(step, 16);
+  })();
+}
+function attractTick() {
+  if (userActive) return;
+  ghostRake();
+  setTimeout(attractTick, 3000 + Math.random()*2200);
+}
+setTimeout(attractTick, 600);
 
 // ---- ループ ----
 let frame = 0;

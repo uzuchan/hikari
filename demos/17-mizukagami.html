@@ -79,7 +79,9 @@ let colorIdx = 0;
 function pt(e) {
   return { x: e.clientX * DPR, y: Math.min(e.clientY * DPR, waterY - 6 * DPR) };
 }
+let userActive = false;
 addEventListener('pointerdown', e => {
+  userActive = true;
   if (e.clientY * DPR >= waterY) return; // 水面より下では描けない
   drawing = { pts: [pt(e)], c: PALETTE[colorIdx++ % PALETTE.length], state: 'live', releasedAt: 0 };
   strokes.push(drawing);
@@ -118,6 +120,38 @@ function dissolve(s) {
     }
   }
 }
+
+// ---- アトラクト：誰も触れていない間、夜の空気に光の文字がひとりでに綴られ、水へほどける ----
+function attractWrite() {
+  if (userActive) return;
+  const cxp = (0.34 + Math.random()*0.32) * W;
+  const cyp = (0.16 + Math.random()*0.16) * H;       // 水面より十分上の空気
+  const scale = (0.09 + Math.random()*0.05) * Math.min(W, H);
+  const ax = 0.5 + Math.floor(Math.random()*2)*0.5, phx = Math.random()*Math.PI*2;
+  const n = 40, path = [];
+  for (let i=0; i<n; i++) {
+    const u = i/(n-1);
+    path.push({
+      x: cxp + Math.sin(u*Math.PI*2*ax + phx) * scale,
+      y: Math.min(waterY - 8*DPR, cyp + (u-0.5)*scale*1.7 + Math.sin(u*Math.PI*2)*scale*0.35)
+    });
+  }
+  const s = { pts: [path[0]], c: PALETTE[Math.floor(Math.random()*PALETTE.length)], state: 'live', releasedAt: 0 };
+  strokes.push(s);
+  let i = 1;
+  (function step() {
+    if (userActive) { s.state = 'held'; s.releasedAt = performance.now(); return; }
+    s.pts.push(path[i++]);
+    if (i < path.length) setTimeout(step, 24);
+    else { s.state = 'held'; s.releasedAt = performance.now(); }
+  })();
+}
+function attractTick() {
+  if (userActive) return;
+  attractWrite();
+  setTimeout(attractTick, 4200 + Math.random()*2800);
+}
+setTimeout(attractTick, 800);
 
 // ---- 描画ループ ----
 function loop(t) {

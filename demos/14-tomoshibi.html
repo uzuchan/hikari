@@ -180,7 +180,9 @@ function sleepOne() {
   lit[Math.floor(Math.random() * lit.length)].target = 0;
 }
 
+let userActive = false;
 addEventListener('pointerdown', e => {
+  userActive = true;
   const px = e.clientX * DPR, py = e.clientY * DPR;
   lastTouch = performance.now();
   let hit = false;
@@ -216,6 +218,18 @@ function spawnWalker() {
     c: Math.random() < 0.75 ? '#ffd98a' : '#f4f2ec'
   });
 }
+
+// ---- アトラクト：誰も触れていない街でも、窓はひとつ、またひとつと灯る ----
+// （既存の「放置で眠る」機構と釣り合い、灯りが点いては消える生きた夜になる）
+function attractTick() {
+  if (userActive) return;
+  if (litCount() < 14 && buildings.length) {
+    const b = buildings[Math.floor(Math.random() * buildings.length)];
+    lightOne(b, b.x + Math.random() * b.w, b.top + Math.random() * (streetY - b.top));
+  }
+  setTimeout(attractTick, 1200 + Math.random() * 1000);
+}
+setTimeout(attractTick, 500);
 
 // ---- 描画ループ ----
 function loop(t) {

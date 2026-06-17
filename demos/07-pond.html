@@ -45,7 +45,7 @@ resize();
 addEventListener('resize', resize);
 
 // 低音→温かい色 / 高音→澄んだ色
-const PALETTE = ['#ffb070', '#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#b8ffc2'];
+const PALETTE = ['#ffb070', '#ffd98a', '#ffaad4', '#c9a8ff', '#8ce8ff', '#f4f2ec'];
 
 let ripples = [], fish = [];
 
@@ -68,11 +68,23 @@ function splash(x, y, power, hue01) {
   }
 }
 
-addEventListener('pointerdown', e => splash(e.clientX*DPR, e.clientY*DPR, 0.6, Math.random()));
+let userActive = false;
+addEventListener('pointerdown', e => { userActive = true; splash(e.clientX*DPR, e.clientY*DPR, 0.6, Math.random()); });
+
+// ---- アトラクト：誰もいない池に、ときおり雨のしずくが落ちて波紋がひろがる ----
+function attractTick() {
+  if (userActive) return;
+  const x = (0.12 + Math.random()*0.76) * W;
+  const y = (0.24 + Math.random()*0.6) * H;
+  splash(x, y, 0.1 + Math.random()*0.22, Math.random());   // 控えめなしずく
+  setTimeout(attractTick, 1700 + Math.random()*2000);
+}
+setTimeout(attractTick, 900);
 
 // ---- マイク：拍手検出 ----
 let analyser = null, tdata = null, fdata = null, avg = 0.02, cooldown = 0;
 document.getElementById('mic-btn').addEventListener('click', async () => {
+  userActive = true;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const ac = new (window.AudioContext || window.webkitAudioContext)();

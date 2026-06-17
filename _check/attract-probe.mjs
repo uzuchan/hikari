@@ -1,0 +1,12 @@
+import { chromium } from 'playwright';
+const slug = process.argv[2];
+const restMs = +(process.argv[3]||5000);
+const b = await chromium.launch();
+const ctx = await b.newContext({ viewport:{width:1280,height:800} });
+const p = await ctx.newPage();
+const errs=[]; p.on('console',m=>{if(m.type()==='error')errs.push(m.text())}); p.on('pageerror',e=>errs.push(String(e)));
+await p.goto(`http://localhost:8013/demos/${slug}.html`,{waitUntil:'networkidle'});
+await p.waitForTimeout(restMs);
+await p.screenshot({ path:`_check/q/${slug}-attract.png` });
+console.log(`${slug}: rest err=${errs.length} ${errs.slice(0,2).join('|')}`);
+await b.close();

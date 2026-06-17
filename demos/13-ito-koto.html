@@ -134,7 +134,9 @@ let drag = null;            // {x0,y0,x,y}
 let prev = null;            // 直前のポインタ位置（なぞり判定用）
 function pt(e) { return { x: e.clientX * DPR, y: e.clientY * DPR }; }
 
+let userActive = false;
 addEventListener('pointerdown', e => {
+  userActive = true;
   ensureAudio();
   const p = pt(e);
   drag = { x0: p.x, y0: p.y, x: p.x, y: p.y };
@@ -248,6 +250,31 @@ function drawSparks(dt) {
   sparks = sparks.filter(p => p.life < p.max);
   if (sparks.length > 400) sparks.splice(0, sparks.length - 400);
 }
+
+// ---- アトラクト：誰も触れていない間、張られた糸がひとりでに震えて鳴る ----
+// （音は ensureAudio 前なので無音。ユーザーが触れた瞬間に止まる）
+function attractInit() {
+  const lay = [
+    [W*0.36, H*0.34, W*0.45, H*0.70],
+    [W*0.48, H*0.30, W*0.55, H*0.72],
+    [W*0.60, H*0.37, W*0.65, H*0.66],
+  ];
+  for (const [ax, ay, bx, by] of lay) addString(ax, ay, bx, by);
+  attractPluck();
+}
+let apIdx = 0;
+function attractPluck() {
+  if (userActive) return;
+  const live = strings.filter(s => s.life > 0.2);
+  if (live.length) {
+    const s = live[apIdx++ % live.length];
+    pluck(s, 0.3 + Math.random()*0.4, 0.45 + Math.random()*0.35, performance.now());
+    setTimeout(attractPluck, 2200 + Math.random()*1500);
+  } else {
+    attractInit();   // 万一すべて溶けたら、そっと張り直す
+  }
+}
+setTimeout(attractInit, 700);
 
 // ---- ループ ----
 let last = 0;
